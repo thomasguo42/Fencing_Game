@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #20140b;
+  background-color: #f8f4eb;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Space Grotesk", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}

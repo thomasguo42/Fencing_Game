@@ -1,0 +1,54 @@
+{
+  "ruleset_version": "v3.3.0",
+  "tactics": [
+    {
+      "id": "w12_t01",
+      "name_cn": "精准技术终结",
+      "desc_cn": "依靠扎实的基本功完成最后一击。",
+      "requirements": { "skill": 65 },
+      "on_meet_apply": { "skill": 8, "mind": 4 },
+      "on_fail_apply": { "skill": -6, "mind": -8 }
+    },
+    {
+      "id": "w12_t02",
+      "name_cn": "耐心消耗战术",
+      "desc_cn": "通过控制距离和节奏消耗对手。",
+      "requirements": { "mind": 65 },
+      "on_meet_apply": { "mind": 10, "academics": 4 },
+      "on_fail_apply": { "mind": -10, "academics": -6 }
+    },
+    {
+      "id": "w12_t03",
+      "name_cn": "全力进攻战术",
+      "desc_cn": "以高强度连续进攻结束比赛。",
+      "requirements": { "stamina": 65 },
+      "on_meet_apply": { "stamina": 12, "skill": 6 },
+      "on_fail_apply": { "stamina": -12, "skill": -8 }
+    },
+    {
+      "id": "w12_t04",
+      "name_cn": "心理干扰战术",
+      "desc_cn": "使用心理战术干扰对手判断。",
+      "requirements": { "social": 60 },
+      "on_meet_apply": { "social": 8, "mind": 6 },
+      "on_fail_apply": { "social": -8, "mind": -10 }
+    },
+    {
+      "id": "w12_t05",
+      "name_cn": "预设战术执行",
+      "desc_cn": "执行预设的战术方案取胜。",
+      "requirements": { "academics": 60 },
+      "on_meet_apply": { "academics": 10, "skill": 5 },
+      "on_fail_apply": { "academics": -10, "skill": -8 }
+    },
+    {
+      "id": "w12_t06",
+      "name_cn": "直觉反应战术",
+      "desc_cn": "依靠训练形成的直觉反应完成最后一击。",
+      "requirements": { "skill": 60, "mind": 60 },
+      "requirements_mode": "all",
+      "on_meet_apply": { "skill": 6, "mind": 8 },
+      "on_fail_apply": { "skill": -8, "mind": -12 }
+    }
+  ]
+}

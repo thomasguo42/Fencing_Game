@@ -1,0 +1,49 @@
+{
+  "ruleset_version": "v3.3.0",
+  "nav_cn": {
+    "start_new": "开始新旅程",
+    "continue": "继续",
+    "back": "返回",
+    "restart": "再度开始描绘"
+  },
+  "run_cn": {
+    "resume_guest": "继续上次旅程",
+    "run_not_found": "未找到可继续的旅程。",
+    "invalid_state": "当前进度状态异常，请刷新重试。"
+  },
+  "allocation_cn": {
+    "submit": "定影",
+    "errors": {
+      "sum_not_250": "总点数必须为250。",
+      "attr_out_of_range": "每项属性必须在25到60之间。"
+    }
+  },
+  "week_cn": {
+    "choose_prompt": "你将如何选择？",
+    "confirm_choice": "确认选择",
+    "loading_next": "推演中…"
+  },
+  "final_cn": {
+    "title": "最终淬炼：决胜一分",
+    "requirements_title": "核心属性要求",
+    "choose_prompt": "最后一剑，你会怎么出手？"
+  },
+  "report_cn": {
+    "title": "第一学年成长报告",
+    "cta_view_report": "查阅年度成长报告",
+    "cta_achievements": "步入成就陈列室"
+  },
+  "auth_cn": {
+    "login": "登录",
+    "register": "注册",
+    "logout": "退出登录",
+    "username": "用户名",
+    "password": "密码",
+    "submit": "提交",
+    "errors": {
+      "invalid_credentials": "用户名或密码错误。",
+      "username_taken": "用户名已被占用。"
+    }
+  }
+}
+

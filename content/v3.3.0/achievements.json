@@ -1,0 +1,126 @@
+{
+  "ruleset_version": "v3.3.0",
+  "core": [
+    {
+      "id": "ach_core_01",
+      "name_cn": "完整的一年",
+      "desc_cn": "完成全部12个淬炼。",
+      "check_timing": "on_game_end",
+      "conditions": { "completed_weeks_eq": 12 }
+    },
+    {
+      "id": "ach_core_02",
+      "name_cn": "均衡的胚芽",
+      "desc_cn": "游戏结束时，所有属性在30-60之间。",
+      "check_timing": "on_game_end",
+      "conditions": { "all_attrs_between_inclusive": { "min": 30, "max": 60 } }
+    },
+    {
+      "id": "ach_core_03",
+      "name_cn": "技艺的觉醒",
+      "desc_cn": "技巧 ≥ 65。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_gte": { "skill": 65 } }
+    },
+    {
+      "id": "ach_core_04",
+      "name_cn": "心之砺石",
+      "desc_cn": "心态 ≥ 65。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_gte": { "mind": 65 } }
+    },
+    {
+      "id": "ach_core_05",
+      "name_cn": "连接之网",
+      "desc_cn": "人际 ≥ 65。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_gte": { "social": 65 } }
+    },
+    {
+      "id": "ach_core_06",
+      "name_cn": "学剑并进",
+      "desc_cn": "学业 ≥ 60。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_gte": { "academics": 60 } }
+    },
+    {
+      "id": "ach_core_07",
+      "name_cn": "资源的学徒",
+      "desc_cn": "理财 ≥ 60。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_gte": { "finance": 60 } }
+    }
+  ],
+  "special": [
+    {
+      "id": "ach_special_01",
+      "name_cn": "优秀的起点",
+      "desc_cn": "总积分 ≥ 600。",
+      "check_timing": "on_game_end",
+      "conditions": { "total_score_gte": 600 }
+    },
+    {
+      "id": "ach_special_02",
+      "name_cn": "蜕变的证明",
+      "desc_cn": "游戏结束时，最终人格与初始人格完全不同。",
+      "check_timing": "on_game_end",
+      "conditions": { "personality_end_not_equal_start": true }
+    },
+    {
+      "id": "ach_special_03",
+      "name_cn": "潜力的微光",
+      "desc_cn": "体能、技巧、心态中至少两项 ≥ 65，且无属性 < 40。",
+      "check_timing": "on_game_end",
+      "conditions": {
+        "at_least_k_of_attrs_gte": {
+          "k": 2,
+          "attrs": ["stamina", "skill", "mind"],
+          "value": 65
+        },
+        "no_attr_below": 40
+      }
+    },
+    {
+      "id": "ach_special_04",
+      "name_cn": "无伤之叶",
+      "desc_cn": "体能属性全程从未低于25。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_never_below": { "stamina": 25 } }
+    },
+    {
+      "id": "ach_special_05",
+      "name_cn": "决赛的试炼者",
+      "desc_cn": "在决赛中以“属性达标”条件获胜。",
+      "check_timing": "on_final_win",
+      "conditions": { "final_win_with_requirements_met": true }
+    },
+    {
+      "id": "ach_special_06",
+      "name_cn": "经济自由",
+      "desc_cn": "理财属性全程从未低于30。",
+      "check_timing": "on_game_end",
+      "conditions": { "attr_never_below": { "finance": 30 } }
+    }
+  ],
+  "legend": [
+    {
+      "id": "ach_legend_01",
+      "name_cn": "六维的胚芽",
+      "desc_cn": "所有属性在50-65之间，总积分≥650，完成全部淬炼，未触发崩解，并以达标条件决赛获胜。",
+      "rewards_cn": [
+        "专属称号\"均衡胚芽\"",
+        "特殊结局水墨动画",
+        "深度分析报告（揭示所有隐藏机制）",
+        "名字永铭于\"初形殿堂\""
+      ],
+      "check_timing": "on_game_end",
+      "conditions": {
+        "all_attrs_between_inclusive": { "min": 50, "max": 65 },
+        "total_score_gte": 650,
+        "completed_weeks_eq": 12,
+        "not_collapsed": true,
+        "final_win_with_requirements_met": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "ruleset_version": "v3.3.0",
+  "templates": {
+    "trajectory_summary_cn": "【轨迹摘要】\n从{start_tone}到{end_tone}。你在{strengths}上展现了天赋，但在{weaknesses}上曾多次面临挑战。{turning_point}是你最大的转折点，那次选择让你学会了{lesson}。",
+    "coach_note_cn": "【教练手札（王教练评语）】\n{coach_open}\n\n这一年，你的{notable_growth}最为明显；而{risk_area}仍需谨慎对待。\n\n记住：{coach_motto}",
+    "teammate_note_cn": "【队友印象（林薇留言）】\n{teammate_line}",
+    "final_moment_cn": "【决赛定格】\n最后一剑，时间仿佛凝固。你选择了【{tactic_name}】。{final_action}\n\n得分灯亮起的那一刻，你知道：这不仅仅是一场胜负。"
+  }
+}

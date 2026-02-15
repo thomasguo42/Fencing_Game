@@ -1,0 +1,77 @@
+{
+  "ruleset_version": "v3.3.0",
+  "attributes": [
+    "stamina",
+    "skill",
+    "mind",
+    "academics",
+    "social",
+    "finance"
+  ],
+  "allocation": {
+    "total_points": 250,
+    "min_per_attr": 25,
+    "max_per_attr": 60
+  },
+  "clamp": {
+    "min": 0,
+    "max": 100
+  },
+  "redlines": {
+    "stamina": 15,
+    "skill": 15,
+    "mind": 12,
+    "academics": 10,
+    "social": 12,
+    "finance": 15
+  },
+  "warning_offset": 5,
+  "scoring": {
+    "weights": {
+      "stamina": 1.8,
+      "skill": 2.0,
+      "mind": 1.8,
+      "academics": 1.4,
+      "social": 1.3,
+      "finance": 1.0
+    },
+    "rounding": {
+      "score": "half_up"
+    },
+    "factors": {
+      "final_win_fancy": 1.12,
+      "final_win_normal": 1.06,
+      "final_win_close": 1.03,
+      "final_lose_close": 0.97,
+      "final_lose": 0.94,
+      "no_final": 0.85,
+      "collapse": 0.80
+    },
+    "micro_tweak_pct_choices": [1, 2, 3],
+    "micro_tweak_sign_choices": [-1, 1],
+    "grades": [
+      { "id": "D", "min_score": 0, "max_score": 349, "label": "懵懂摸索" },
+      { "id": "C", "min_score": 350, "max_score": 449, "label": "初步适应" },
+      { "id": "B", "min_score": 450, "max_score": 549, "label": "稳定扎根" },
+      { "id": "A", "min_score": 550, "max_score": 649, "label": "优秀初绽" },
+      { "id": "S", "min_score": 650, "max_score": 999999, "label": "卓越启程" }
+    ]
+  },
+  "rng": {
+    "plus_minus": {
+      "distribution": "binomial_center_biased",
+      "integer_only": true
+    },
+    "final_win": {
+      "base_win_rate": 0.7,
+      "step_excess": 10,
+      "step_bonus": 0.05,
+      "max_win_rate": 0.95
+    },
+    "final_tiers_by_excess": [
+      { "tier": "fancy", "min_excess": 10 },
+      { "tier": "normal", "min_excess": 5 },
+      { "tier": "close", "min_excess": 0 }
+    ]
+  }
+}
