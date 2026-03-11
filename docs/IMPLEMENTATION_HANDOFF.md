@@ -339,7 +339,7 @@ Only final report responses include numeric attributes and score.
     - show feedback glows using warning flags
 - Finals:
   - show `weeks[12].narrative_cn`
-  - list 6 tactics from `finals.json` with requirements (requirements are visible here by design)
+  - list 6 tactics from `finals.json` using only player-facing flavor fields
 - Report:
   - render deterministic report sections returned by backend
   - show radar chart and numeric attributes
@@ -379,4 +379,3 @@ These are deliberate clarifications; implement them as written:
 2. Add engine unit tests and golden tests; add CI running validator + tests.
 3. Add `Game/server/` FastAPI app and DB schema/migrations; implement endpoints.
 4. Add `Game/web/` SPA; render content + connect to API; enforce hidden-number rule.
-

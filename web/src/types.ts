@@ -14,6 +14,7 @@ export type PublicScreen = {
   screen: ScreenType;
   payload: Record<string, unknown>;
   result_cn?: string;
+  report_payload?: PublicScreen;
   personality_reveal?: {
     title_cn?: string;
     cta_cn?: string;

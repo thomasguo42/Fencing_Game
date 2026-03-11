@@ -26,12 +26,6 @@ function getWarningAttrs(screen: PublicScreen | null): string[] {
   return [];
 }
 
-function requirementsText(requirements: Record<string, number>): string {
-  return Object.entries(requirements)
-    .map(([k, v]) => `${ATTR_CN[k] ?? k} ≥ ${v}`)
-    .join(" 且 ");
-}
-
 function statusCn(status: string): string {
   const map: Record<string, string> = {
     in_progress: "进行中",
@@ -104,6 +98,9 @@ export default function App() {
     setShowOpening(current.screen === "allocation");
     setHistoryIndex(-1);
     setScreenHistory((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].run_id !== current.run_id) {
+        return [current];
+      }
       const last = prev[prev.length - 1];
       if (last && last.run_id === current.run_id && last.week === current.week && last.screen === current.screen && last.status === current.status) {
         return prev;
@@ -471,6 +468,13 @@ export default function App() {
               <div className="space-y-2">
                 <p className="font-body text-xs text-ink-700">游客模式，可直接游玩；登录后可管理多个旅程。</p>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleCreateRun}
+                    disabled={actionBusy || isViewingHistory}
+                    className="rounded bg-bronze px-3 py-1 text-xs text-white disabled:opacity-50"
+                  >
+                    新建旅程
+                  </button>
                   <input
                     value={authUsername}
                     onChange={(e) => setAuthUsername(e.target.value)}
@@ -676,9 +680,6 @@ export default function App() {
                   <div key={String(tactic.id)} className="rounded-xl border border-ink-700/20 bg-white/70 p-4">
                     <p className="font-heading text-lg">{String(tactic.name_cn)}</p>
                     <p className="mt-1 font-body text-sm text-ink-700">{String(tactic.desc_cn)}</p>
-                    <p className="mt-2 font-body text-sm text-bronze">
-                      要求：{requirementsText((tactic.requirements as Record<string, number>) ?? {})}
-                    </p>
                     <button
                       onClick={() => chooseFinal(String(tactic.id))}
                       disabled={actionBusy || isViewingHistory}
@@ -714,7 +715,7 @@ export default function App() {
 
               <button
                 onClick={() => {
-                  const next = asPublicScreen((screen as unknown as Record<string, unknown>).report_payload);
+                  const next = asPublicScreen(screen.report_payload);
                   if (next) {
                     applyCurrentScreen(next);
                     return;

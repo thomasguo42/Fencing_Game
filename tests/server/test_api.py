@@ -123,6 +123,7 @@ def test_final_returns_outcome_and_report_payload(monkeypatch) -> None:
         tactics = screen["payload"]["tactics"]
         assert isinstance(tactics, list) and len(tactics) == 6
         for tactic in tactics:
+            assert "requirements" not in tactic
             assert "on_meet_apply" not in tactic
             assert "on_fail_apply" not in tactic
 
@@ -137,5 +138,54 @@ def test_final_returns_outcome_and_report_payload(monkeypatch) -> None:
         assert "attributes" not in body["payload"]
         assert "report_payload" in body
         assert body["report_payload"]["screen"] == "report"
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_guest_can_start_fresh_run_after_finishing_current_one(monkeypatch) -> None:
+    seed = 8888
+    monkeypatch.setattr(service, "randbits", lambda _: seed)
+    plan = _safe_week_choices(seed)
+
+    async def scenario(client: httpx.AsyncClient):
+        r = await client.post("/api/guest/init")
+        assert r.status_code == 200
+
+        create = await client.post("/api/runs")
+        assert create.status_code == 200
+        first_run_id = create.json()["run_id"]
+
+        allocated = await client.post(f"/api/runs/{first_run_id}/allocate", json={"attributes": _allocation()})
+        assert allocated.status_code == 200
+        ack = await client.post(f"/api/runs/{first_run_id}/personality/ack")
+        assert ack.status_code == 200
+
+        screen = ack.json()
+        for choice in plan:
+            picked = await client.post(f"/api/runs/{first_run_id}/choose", json={"option_id": choice})
+            assert picked.status_code == 200
+            screen = picked.json()
+            if screen["screen"] != "week":
+                break
+
+        assert screen["screen"] == "finals"
+        final = await client.post(f"/api/runs/{first_run_id}/final", json={"tactic_id": "w12_t06"})
+        assert final.status_code == 200
+        body = final.json()
+        assert body["screen"] == "final_outcome"
+
+        active_before = await client.get("/api/runs/active")
+        assert active_before.status_code == 200
+        assert active_before.json()["run_id"] == first_run_id
+
+        create_second = await client.post("/api/runs")
+        assert create_second.status_code == 200
+        second_run_id = create_second.json()["run_id"]
+        assert second_run_id != first_run_id
+
+        active_after = await client.get("/api/runs/active")
+        assert active_after.status_code == 200
+        assert active_after.json()["run_id"] == second_run_id
+        assert active_after.json()["screen"] == "allocation"
 
     asyncio.run(_with_api_client(scenario))

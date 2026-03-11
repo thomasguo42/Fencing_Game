@@ -91,7 +91,6 @@ def build_finals_screen(content: ContentBundle, run_id: str, state: RunState) ->
                 "id": tactic["id"],
                 "name_cn": tactic["name_cn"],
                 "desc_cn": tactic["desc_cn"],
-                "requirements": tactic["requirements"],
             }
         )
     return {

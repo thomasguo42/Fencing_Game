@@ -44,7 +44,7 @@ Recommended fix direction:
 ### 2) Finals tactics payload leaks `on_meet_apply` / `on_fail_apply` numeric deltas (Critical)
 
 Frozen requirements:
-- Week 12 may show requirements (thresholds), but in-run screens still must not show numeric attribute changes (deltas). See `Game/docs/ruleset/v3.3.0.md` numeric display rules.
+- Week 12 remains an in-run screen, so player-facing API should not expose exact numeric thresholds or deltas. See `Game/docs/ruleset/v3.3.0.md` numeric display rules.
 
 Current implementation:
 - Finals screen returns `content.finals["tactics"]` verbatim, which includes numeric `on_meet_apply` and `on_fail_apply` deltas.
@@ -53,8 +53,8 @@ Current implementation:
 
 Recommended fix direction:
 - Add a “public tactic DTO” on the server side and only return:
-  - `id`, `name_cn`, `desc_cn`, `requirements`
-- Frontend should render requirements only; do not display or rely on `on_meet_apply/on_fail_apply`.
+  - `id`, `name_cn`, `desc_cn`
+- Frontend should render tactic flavor only; do not display or rely on `requirements` / `on_meet_apply` / `on_fail_apply`.
 
 ## Security and Stability Issues (High Priority)
 
