@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from engine.content import ContentBundle, collapse_ending_by_id, option_by_id, tactic_by_id, week_by_num
+from engine.content import ContentBundle, collapse_ending_by_id, option_by_id, personality_by_id, tactic_by_id, week_by_num
 from engine.models import RunState
 
 
@@ -15,6 +15,35 @@ def build_allocation_screen(content: ContentBundle, run_id: str, state: RunState
         "payload": {
             "intro": content.intro,
             "ui": content.ui.get("allocation_cn", {}),
+        },
+    }
+
+
+def build_personality_reveal_screen(content: ContentBundle, run_id: str, state: RunState) -> dict[str, Any]:
+    reveal = content.intro.get("personality_reveal", {}) if isinstance(content.intro, dict) else {}
+    template = str(reveal.get("template_cn", ""))
+    p = personality_by_id(content, state.personality_start or "white_paper")
+    name_cn = str(p.get("name_cn", ""))
+    desc_cn = str((p.get("copy_cn") or {}).get("long", ""))
+    if template.strip():
+        reveal_cn = template.replace("[人格名称]", name_cn).replace("[人格描述]", desc_cn)
+    else:
+        reveal_cn = f"【你的初形】\n{name_cn}\n{desc_cn}".strip()
+
+    return {
+        "run_id": run_id,
+        "status": state.status,
+        "week": state.week,
+        "screen": "personality_reveal",
+        "payload": {
+            "title_cn": reveal.get("title_cn") or "人格觉醒：你的初貌",
+            "cta_cn": reveal.get("cta_cn") or "继续",
+            "reveal_cn": reveal_cn,
+            "personality": {
+                "id": p.get("id"),
+                "name_cn": p.get("name_cn"),
+                "copy_cn": p.get("copy_cn"),
+            },
         },
     }
 

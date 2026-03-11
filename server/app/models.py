@@ -48,6 +48,9 @@ class Run(Base):
     attributes_start: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     personality_start: Mapped[str | None] = mapped_column(String(64), nullable=True)
     personality_end: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Personality reveal is a required, resumable step right after allocation.
+    # Default True so existing rows (pre-migration behavior) are not blocked.
+    personality_reveal_ack: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     warning_attrs: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
 
     final_tactic_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

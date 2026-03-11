@@ -30,21 +30,27 @@
 
 ## 本地运行
 
+推荐一键启动（含迁移 + API + Web，Web 走 `8080`）：
+`bash scripts/dev_up.sh`
+
+手动启动（推荐使用 Alembic，而不是 `create_all()`）：
+
 1. 安装 Python 依赖
 `python3 -m pip install -e '.[dev]'`
 
-2. 校验内容与测试
-`python3 tools/validate_content.py`
-`python3 -m pytest -q`
+2. 运行迁移
+`python3 -m alembic -c server/alembic.ini upgrade head`
 
 3. 启动后端 API
-`uvicorn server.app.main:app --reload --host 127.0.0.1 --port 8000`
-
-可选（使用 Alembic 显式迁移）：
-`alembic -c server/alembic.ini upgrade head`
+`AUTO_CREATE_TABLES=false uvicorn server.app.main:app --reload --host 127.0.0.1 --port 8000`
 
 4. 启动前端
 `cd web && npm install && npm run dev`
+
+如果你之前在开发环境用过 `AUTO_CREATE_TABLES=true` 启动服务，可能已经生成了包含表但缺少 `alembic_version`
+的 `game.db`，此时直接 `upgrade head` 会报 “table ... already exists”。修复方式是先 `stamp` 再 `upgrade`：
+`python3 -m alembic -c server/alembic.ini stamp 20260213_0002`
+`python3 -m alembic -c server/alembic.ini upgrade head`
 
 ## 部署注意事项
 

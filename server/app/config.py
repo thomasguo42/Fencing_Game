@@ -35,7 +35,7 @@ class Settings:
 
         self.auto_create_tables: bool = _as_bool(
             os.getenv("AUTO_CREATE_TABLES"),
-            default=(self.app_env != "production"),
+            default=False,
         )
 
         self.cors_origins: list[str] = _split_csv(

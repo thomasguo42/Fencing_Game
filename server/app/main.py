@@ -38,6 +38,7 @@ from server.app.service import (
     set_session_cookie,
     allocate_run,
     choose_option,
+    ack_personality_reveal,
 )
 
 
@@ -167,6 +168,15 @@ def choose(run_id: str, payload: ChooseRequest, request: Request, db: Session = 
     actor = require_actor(request)
     run = get_run_for_actor(db, actor, run_id)
     response = choose_option(db, run, payload.option_id)
+    db.commit()
+    return response
+
+
+@app.post("/api/runs/{run_id}/personality/ack")
+def personality_ack(run_id: str, request: Request, db: Session = Depends(get_db)):
+    actor = require_actor(request)
+    run = get_run_for_actor(db, actor, run_id)
+    response = ack_personality_reveal(db, run)
     db.commit()
     return response
 

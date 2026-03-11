@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+import asyncio
+
+import httpx
 
 from engine import GameEngine
 from server.app.main import app
@@ -39,28 +41,45 @@ def _safe_week_choices(seed: int) -> list[str]:
     return choices
 
 
+async def _with_api_client(fn):
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await fn(client)
+
+
 def test_guest_run_hidden_numbers_policy() -> None:
-    with TestClient(app) as client:
-        r = client.post("/api/guest/init")
+    async def scenario(client: httpx.AsyncClient):
+        r = await client.post("/api/guest/init")
         assert r.status_code == 200
 
-        create = client.post("/api/runs")
+        create = await client.post("/api/runs")
         assert create.status_code == 200
         run_id = create.json()["run_id"]
 
-        allocated = client.post(f"/api/runs/{run_id}/allocate", json={"attributes": _allocation()})
+        allocated = await client.post(f"/api/runs/{run_id}/allocate", json={"attributes": _allocation()})
         assert allocated.status_code == 200
 
         payload = allocated.json()
+        assert payload["screen"] == "personality_reveal"
+        assert "reveal_cn" in payload["payload"]
+
+        # Must ack personality reveal before choosing week 1.
+        must_ack = await client.post(f"/api/runs/{run_id}/choose", json={"option_id": "w01_o01"})
+        assert must_ack.status_code == 400
+
+        ack = await client.post(f"/api/runs/{run_id}/personality/ack")
+        assert ack.status_code == 200
+        payload = ack.json()
         assert payload["screen"] == "week"
         assert len(payload["payload"]["options"]) == 3
         assert "attributes" not in payload["payload"]
 
-        bad_choice = client.post(f"/api/runs/{run_id}/choose", json={"option_id": "w01_o99"})
+        bad_choice = await client.post(f"/api/runs/{run_id}/choose", json={"option_id": "w01_o99"})
         assert bad_choice.status_code == 400
 
         option_id = payload["payload"]["options"][0]["id"]
-        chosen = client.post(f"/api/runs/{run_id}/choose", json={"option_id": option_id})
+        chosen = await client.post(f"/api/runs/{run_id}/choose", json={"option_id": option_id})
         assert chosen.status_code == 200
         body = chosen.json()
 
@@ -68,27 +87,33 @@ def test_guest_run_hidden_numbers_policy() -> None:
             assert "attributes" not in body["payload"]
             assert "options" in body["payload"]
 
+    asyncio.run(_with_api_client(scenario))
+
 
 def test_final_returns_outcome_and_report_payload(monkeypatch) -> None:
     seed = 8888
     monkeypatch.setattr(service, "randbits", lambda _: seed)
     plan = _safe_week_choices(seed)
 
-    with TestClient(app) as client:
-        r = client.post("/api/guest/init")
+    async def scenario(client: httpx.AsyncClient):
+        r = await client.post("/api/guest/init")
         assert r.status_code == 200
 
-        create = client.post("/api/runs")
+        create = await client.post("/api/runs")
         assert create.status_code == 200
         run_id = create.json()["run_id"]
 
-        allocated = client.post(f"/api/runs/{run_id}/allocate", json={"attributes": _allocation()})
+        allocated = await client.post(f"/api/runs/{run_id}/allocate", json={"attributes": _allocation()})
         assert allocated.status_code == 200
 
         screen = allocated.json()
+        assert screen["screen"] == "personality_reveal"
+        ack = await client.post(f"/api/runs/{run_id}/personality/ack")
+        assert ack.status_code == 200
+        screen = ack.json()
         for choice in plan:
             assert screen["screen"] == "week"
-            picked = client.post(f"/api/runs/{run_id}/choose", json={"option_id": choice})
+            picked = await client.post(f"/api/runs/{run_id}/choose", json={"option_id": choice})
             assert picked.status_code == 200
             screen = picked.json()
             if screen["screen"] != "week":
@@ -101,7 +126,7 @@ def test_final_returns_outcome_and_report_payload(monkeypatch) -> None:
             assert "on_meet_apply" not in tactic
             assert "on_fail_apply" not in tactic
 
-        final = client.post(f"/api/runs/{run_id}/final", json={"tactic_id": "w12_t06"})
+        final = await client.post(f"/api/runs/{run_id}/final", json={"tactic_id": "w12_t06"})
         assert final.status_code == 200
         body = final.json()
         assert body["screen"] == "final_outcome"
@@ -112,3 +137,5 @@ def test_final_returns_outcome_and_report_payload(monkeypatch) -> None:
         assert "attributes" not in body["payload"]
         assert "report_payload" in body
         assert body["report_payload"]["screen"] == "report"
+
+    asyncio.run(_with_api_client(scenario))

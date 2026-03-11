@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from engine import GameEngine
-from engine.content import option_by_id, personality_by_id
+from engine.content import option_by_id
 from engine.models import RunState
 from server.app.config import settings
 from server.app.models import Guest, Run, RunWeekLog, User
@@ -18,6 +18,7 @@ from server.app.presentation import (
     build_collapse_screen,
     build_final_outcome_screen,
     build_finals_screen,
+    build_personality_reveal_screen,
     build_report_screen,
     build_week_screen,
 )
@@ -134,6 +135,8 @@ def _run_to_public(db: Session, run: Run) -> dict[str, Any]:
         return build_final_outcome_screen(content, run.id, state)
 
     if 1 <= state.week <= 11:
+        if not run.personality_reveal_ack and len(state.history) == 0:
+            return build_personality_reveal_screen(content, run.id, state)
         week_log = _ensure_presented_week_log(db, run, state)
         state = replace(state, presented_options=list(week_log.presented_option_ids))
         return build_week_screen(content, run.id, state, list(week_log.presented_option_ids))
@@ -210,6 +213,7 @@ def create_run(db: Session, actor: Actor) -> Run:
         user_id=user_id,
         guest_id=guest_id,
         is_active_guest_run=(owner_type == "guest"),
+        personality_reveal_ack=True,
         attributes=attrs_zero,
         min_attributes=attrs_zero,
         warning_attrs=[],
@@ -229,36 +233,27 @@ def allocate_run(db: Session, run: Run, attributes: dict[str, int]) -> dict[str,
     week_log = _ensure_presented_week_log(db, run, state)
     week_log.presented_option_ids = list(state.presented_options)
 
+    # Personality reveal is a required, resumable step right after allocation.
+    run.personality_reveal_ack = False
+
     db.add(run)
     db.flush()
 
-    payload = build_week_screen(content, run.id, state, list(state.presented_options))
+    return build_personality_reveal_screen(content, run.id, state)
 
-    # Personality reveal is an intro-only step right after allocation. We return it once
-    # (client shows as a modal) without changing the run state machine.
-    reveal = content.intro.get("personality_reveal", {})
-    p = personality_by_id(content, state.personality_start or "white_paper")
-    template = str(reveal.get("template_cn", ""))
-    reveal_cn = template.replace("[人格名称]", str(p.get("name_cn", ""))).replace(
-        "[人格描述]", str((p.get("copy_cn") or {}).get("long", ""))
-    )
 
-    payload["personality_reveal"] = {
-        "title_cn": reveal.get("title_cn"),
-        "cta_cn": reveal.get("cta_cn"),
-        "reveal_cn": reveal_cn,
-        "personality": {
-            "id": p.get("id"),
-            "name_cn": p.get("name_cn"),
-            "copy_cn": p.get("copy_cn"),
-        },
-    }
-    return payload
+def ack_personality_reveal(db: Session, run: Run) -> dict[str, Any]:
+    run.personality_reveal_ack = True
+    db.add(run)
+    db.flush()
+    return public_run_payload(db, run)
 
 
 def choose_option(db: Session, run: Run, option_id: str) -> dict[str, Any]:
     logs = _fetch_run_week_logs(db, run.id)
     state = run_to_engine_state(run, logs)
+    if not run.personality_reveal_ack and state.week == 1 and len(state.history) == 0:
+        raise HTTPException(status_code=400, detail="请先确认人格觉醒，再进行第一周选择。")
     if state.status != "in_progress" or state.week < 1 or state.week > 11:
         raise HTTPException(status_code=400, detail="当前不在周事件选择阶段")
 

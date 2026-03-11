@@ -55,6 +55,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ attributes })
     }),
+  ackPersonality: (runId: string) => request<PublicScreen>(`/api/runs/${runId}/personality/ack`, { method: "POST" }),
   choose: (runId: string, optionId: string) =>
     request<PublicScreen>(`/api/runs/${runId}/choose`, {
       method: "POST",

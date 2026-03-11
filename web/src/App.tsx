@@ -18,12 +18,6 @@ type ResultModal = {
   next: PublicScreen;
 };
 
-type PersonalityModal = {
-  title: string;
-  text: string;
-  cta: string;
-};
-
 function getWarningAttrs(screen: PublicScreen | null): string[] {
   if (!screen) return [];
   const fromPayload = screen.payload.warning_attrs;
@@ -81,7 +75,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [resultModal, setResultModal] = useState<ResultModal | null>(null);
-  const [personalityModal, setPersonalityModal] = useState<PersonalityModal | null>(null);
   const [showOpening, setShowOpening] = useState(false);
   const [voiceLineIndex, setVoiceLineIndex] = useState(0);
 
@@ -205,10 +198,6 @@ export default function App() {
   const handleBack = () => {
     if (resultModal) {
       setResultModal(null);
-      return;
-    }
-    if (personalityModal) {
-      setPersonalityModal(null);
       return;
     }
     if (screen?.screen === "allocation" && !showOpening) {
@@ -352,16 +341,24 @@ export default function App() {
       const next = await api.allocate(screen.run_id, allocation);
       setShowOpening(false);
       applyCurrentScreen(next);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setActionBusy(false);
+    }
+  };
 
-      const pr = (next.personality_reveal as Record<string, unknown> | undefined) ?? undefined;
-      const revealText = typeof pr?.reveal_cn === "string" ? (pr.reveal_cn as string) : "";
-      if (revealText) {
-        setPersonalityModal({
-          title: String(pr?.title_cn ?? "人格觉醒"),
-          text: revealText,
-          cta: String(pr?.cta_cn ?? "继续")
-        });
+  const ackPersonalityReveal = async () => {
+    if (!screen) return;
+    try {
+      if (isViewingHistory) {
+        setError("当前处于回看模式，请先返回当前进度。");
+        return;
       }
+      setActionBusy(true);
+      setError(null);
+      const next = await api.ackPersonality(screen.run_id);
+      applyCurrentScreen(next);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -615,6 +612,28 @@ export default function App() {
             </motion.section>
           )}
 
+          {screen.screen === "personality_reveal" && (
+            <motion.section
+              key="personality-reveal"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel md:p-8"
+            >
+              <h2 className="font-heading text-2xl">{String(screen.payload.title_cn ?? "人格觉醒：你的初貌")}</h2>
+              <p className="mt-4 whitespace-pre-line font-body text-sm leading-7 text-ink-700">
+                {String(screen.payload.reveal_cn ?? "")}
+              </p>
+              <button
+                onClick={ackPersonalityReveal}
+                disabled={actionBusy || isViewingHistory}
+                className="mt-6 rounded-full bg-bronze px-6 py-2 font-body text-sm font-semibold text-white transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionBusy ? "处理中…" : String(screen.payload.cta_cn ?? "继续")}
+              </button>
+            </motion.section>
+          )}
+
           {screen.screen === "week" && (
             <motion.section
               key={`week-${screen.week}`}
@@ -795,30 +814,6 @@ export default function App() {
       </div>
 
       <AnimatePresence>
-        {personalityModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/45 p-4"
-          >
-            <motion.div
-              initial={{ y: 10, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -10, opacity: 0 }}
-              className="w-full max-w-xl rounded-2xl bg-ink-50 p-5 shadow-panel"
-            >
-              <h3 className="font-heading text-xl">{personalityModal.title}</h3>
-              <p className="mt-3 whitespace-pre-line font-body text-sm leading-7 text-ink-700">{personalityModal.text}</p>
-              <button
-                className="mt-4 rounded-full bg-ink-900 px-4 py-2 font-body text-sm text-white"
-                onClick={() => setPersonalityModal(null)}
-              >
-                {personalityModal.cta}
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
         {resultModal && (
           <motion.div
             initial={{ opacity: 0 }}

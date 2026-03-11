@@ -11,7 +11,7 @@ WEB_HOST="${WEB_HOST:-0.0.0.0}"
 WEB_PORT="${WEB_PORT:-8080}"
 
 APP_ENV="${APP_ENV:-development}"
-AUTO_CREATE_TABLES="${AUTO_CREATE_TABLES:-true}"
+AUTO_CREATE_TABLES="${AUTO_CREATE_TABLES:-false}"
 SECRET_KEY="${SECRET_KEY:-dev-secret-do-not-use-in-production}"
 DATABASE_URL="${DATABASE_URL:-sqlite:///${ROOT_DIR}/game.db}"
 
@@ -81,6 +81,72 @@ PY
 
 ensure_python_deps
 ensure_node_deps
+
+echo "[dev_up] Migrating database (alembic)..."
+APP_ENV="${APP_ENV}" SECRET_KEY="${SECRET_KEY}" DATABASE_URL="${DATABASE_URL}" \
+  "${PYTHON_BIN}" - <<'PY'
+import os
+import sqlite3
+import subprocess
+import sys
+
+from sqlalchemy.engine.url import make_url
+
+DB_URL = os.environ.get("DATABASE_URL", "")
+
+def run_alembic(*args: str) -> int:
+    cmd = [sys.executable, "-m", "alembic", "-c", "server/alembic.ini", *args]
+    return subprocess.call(cmd)
+
+url = make_url(DB_URL)
+if url.drivername.startswith("sqlite"):
+    path = url.database
+    if not path:
+        raise SystemExit(run_alembic("upgrade", "head"))
+
+    con = sqlite3.connect(path)
+    cur = con.cursor()
+
+    def has_table(name: str) -> bool:
+        cur.execute("select 1 from sqlite_master where type='table' and name=?", (name,))
+        return cur.fetchone() is not None
+
+    def runs_has_column(col: str) -> bool:
+        if not has_table("runs"):
+            return False
+        cur.execute("pragma table_info(runs)")
+        cols = {row[1] for row in cur.fetchall()}
+        return col in cols
+
+    has_alembic = has_table("alembic_version")
+    alembic_has_row = False
+    if has_alembic:
+        try:
+            cur.execute("select version_num from alembic_version limit 1")
+            row = cur.fetchone()
+            alembic_has_row = bool(row and row[0])
+        except sqlite3.Error:
+            alembic_has_row = False
+    has_schema = has_table("guests") or has_table("users") or has_table("runs")
+
+    # If schema was created via create_all() previously, there is no alembic_version
+    # table and "upgrade head" will fail trying to create existing tables. We stamp to
+    # a baseline revision and then upgrade forward if needed.
+    if has_schema and (not has_alembic or not alembic_has_row):
+        if runs_has_column("personality_reveal_ack"):
+            print("[dev_up] Existing schema detected; stamping alembic to head.")
+            raise SystemExit(run_alembic("stamp", "head"))
+        else:
+            print("[dev_up] Existing schema detected; stamping alembic to 20260213_0002 then upgrading head.")
+            rc = run_alembic("stamp", "20260213_0002")
+            if rc != 0:
+                raise SystemExit(rc)
+            raise SystemExit(run_alembic("upgrade", "head"))
+
+    raise SystemExit(run_alembic("upgrade", "head"))
+
+raise SystemExit(run_alembic("upgrade", "head"))
+PY
 
 echo "[dev_up] Starting API on http://${API_HOST}:${API_PORT} ..."
 APP_ENV="${APP_ENV}" AUTO_CREATE_TABLES="${AUTO_CREATE_TABLES}" SECRET_KEY="${SECRET_KEY}" DATABASE_URL="${DATABASE_URL}" \
