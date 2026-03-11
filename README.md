@@ -22,6 +22,7 @@
 - 规则冻结：`docs/ruleset/v3.3.0.md`
 - 内容 ID 规范：`docs/content-ids.md`
 - 引擎契约：`docs/engine-contract.md`
+- 架构说明：`docs/architecture.md`
 - 内容校验清单：`docs/content-validation.md`
 
 ## 内容数据 (v3.3.0)
