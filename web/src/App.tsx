@@ -6,7 +6,7 @@ import { ATTR_CN } from "./copy";
 import { EdgeWarnings } from "./components/EdgeWarnings";
 import { MarkdownText } from "./components/MarkdownText";
 import { RadarChart } from "./components/RadarChart";
-import type { PublicScreen, RunListItem } from "./types";
+import type { ArchiveResponse, PublicScreen } from "./types";
 
 const ATTRS = ["stamina", "skill", "mind", "academics", "social", "finance"] as const;
 const ALLOC_TOTAL = 250;
@@ -63,6 +63,18 @@ function allocationWarningText(total: number): string | null {
   return `总点数不足${ALLOC_TOTAL}（当前 ${total}），还需分配 ${ALLOC_TOTAL - total} 点。`;
 }
 
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 export default function App() {
   const [screen, setScreen] = useState<PublicScreen | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +88,7 @@ export default function App() {
   const [historyIndex, setHistoryIndex] = useState<number>(-1); // -1 means "live/latest"
 
   const [sessionMode, setSessionMode] = useState<"guest" | "user">("guest");
-  const [userRuns, setUserRuns] = useState<RunListItem[]>([]);
+  const [archive, setArchive] = useState<ArchiveResponse | null>(null);
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
 
@@ -92,6 +104,11 @@ export default function App() {
   const allocationTotal = useMemo(() => ATTRS.reduce((sum, attr) => sum + allocation[attr], 0), [allocation]);
   const allocationWarning = useMemo(() => allocationWarningText(allocationTotal), [allocationTotal]);
   const isViewingHistory = historyIndex !== -1;
+
+  const refreshArchive = async () => {
+    const next = await api.getArchive();
+    setArchive(next);
+  };
 
   const applyCurrentScreen = (current: PublicScreen) => {
     setScreen(current);
@@ -112,7 +129,6 @@ export default function App() {
 
   const loadGuestContext = async () => {
     setSessionMode("guest");
-    setUserRuns([]);
 
     await api.guestInit();
     const active = await api.getActiveRun();
@@ -126,6 +142,7 @@ export default function App() {
     }
 
     applyCurrentScreen(current);
+    await refreshArchive();
   };
 
   const loadUserContext = async (preferredRunId?: string) => {
@@ -140,9 +157,9 @@ export default function App() {
       listing = await api.listRuns();
     }
 
-    setUserRuns(listing.runs);
     const current = await api.getRun(targetRunId);
     applyCurrentScreen(current);
+    await refreshArchive();
   };
 
   useEffect(() => {
@@ -295,6 +312,7 @@ export default function App() {
       } else {
         const current = await api.getRun(created.run_id);
         applyCurrentScreen(current);
+        await refreshArchive();
       }
     } catch (e) {
       setError((e as Error).message);
@@ -338,6 +356,7 @@ export default function App() {
       const next = await api.allocate(screen.run_id, allocation);
       setShowOpening(false);
       applyCurrentScreen(next);
+      await refreshArchive();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -356,6 +375,7 @@ export default function App() {
       setError(null);
       const next = await api.ackPersonality(screen.run_id);
       applyCurrentScreen(next);
+      await refreshArchive();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -378,6 +398,7 @@ export default function App() {
       } else {
         applyCurrentScreen(next);
       }
+      await refreshArchive();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -396,6 +417,7 @@ export default function App() {
       setError(null);
       const next = await api.chooseFinal(screen.run_id, tacticId);
       applyCurrentScreen(next);
+      await refreshArchive();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -414,6 +436,7 @@ export default function App() {
       setError(null);
       const next = await api.finish(screen.run_id);
       applyCurrentScreen(next);
+      await refreshArchive();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -523,24 +546,61 @@ export default function App() {
                     退出登录
                   </button>
                 </div>
-                <div className="max-h-32 space-y-1 overflow-auto pr-1">
-                  {userRuns.map((run) => (
-                    <button
-                      key={run.run_id}
-                      onClick={() => handleOpenRun(run.run_id)}
-                      disabled={actionBusy}
-                      className="block w-full rounded border border-ink-700/20 bg-white px-2 py-1 text-left text-xs text-ink-700 hover:border-bronze/40 disabled:opacity-50"
-                    >
-                      旅程 {run.run_id.slice(0, 8)} · 第 {run.week} 周 · {statusCn(run.status)}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
           </div>
         </header>
 
         {error && <div className="mb-4 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 font-body text-sm text-danger">{error}</div>}
+
+        {archive && (
+          <section className="mb-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
+              <h2 className="font-heading text-xl">旅程记录</h2>
+              <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
+                {archive.runs.length === 0 ? (
+                  <p className="font-body text-sm text-ink-700">还没有可回看的旅程记录。</p>
+                ) : (
+                  archive.runs.map((run) => (
+                    <button
+                      key={run.run_id}
+                      onClick={() => handleOpenRun(run.run_id)}
+                      disabled={actionBusy || isViewingHistory}
+                      className="block w-full rounded-xl border border-ink-700/20 bg-white/80 px-3 py-2 text-left transition hover:border-bronze/40 disabled:opacity-50"
+                    >
+                      <p className="font-heading text-sm">
+                        旅程 {run.run_id.slice(0, 8)} · 第 {run.week} 周 · {statusCn(run.status)}
+                      </p>
+                      <p className="mt-1 font-body text-xs text-ink-700">
+                        最近游玩：{formatDateTime(run.updated_at)}
+                        {screen?.run_id === run.run_id ? " · 当前查看中" : ""}
+                      </p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
+              <h2 className="font-heading text-xl">成就记录</h2>
+              <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
+                {archive.achievement_records.length === 0 ? (
+                  <p className="font-body text-sm text-ink-700">当前还没有已获得的成就记录。</p>
+                ) : (
+                  archive.achievement_records.map((record) => (
+                    <div key={`${record.run_id}-${record.achievement_id}`} className="rounded-xl border border-bronze/25 bg-white/80 px-3 py-2">
+                      <p className="font-heading text-sm">{record.name_cn}</p>
+                      <p className="mt-1 font-body text-xs text-ink-700">{record.desc_cn}</p>
+                      <p className="mt-1 font-body text-[11px] text-ink-700/80">
+                        旅程 {record.run_id.slice(0, 8)} · {statusCn(record.status)} · {formatDateTime(record.earned_at)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         <AnimatePresence mode="wait">
           {screen.screen === "allocation" && (
@@ -740,9 +800,13 @@ export default function App() {
             >
               {(() => {
                 const ending = (screen.payload.ending as Record<string, string>) ?? {};
+                const personalityStart = (screen.payload.personality_start_meta as Record<string, string> | undefined) ?? {};
+                const personalityEnd = (screen.payload.personality_end_meta as Record<string, string> | undefined) ?? {};
                 return (
                   <>
                     <h2 className="font-heading text-2xl text-danger">推演中止：{ending.name_cn}</h2>
+                    {personalityStart.name_cn && <p className="mt-3 font-body text-sm text-ink-700">初型人格：{personalityStart.name_cn}</p>}
+                    {personalityEnd.name_cn && <p className="font-body text-sm text-ink-700">崩解时人格：{personalityEnd.name_cn}</p>}
                     <p className="mt-4 whitespace-pre-line font-body text-sm leading-7 text-ink-700">{ending.copy_cn}</p>
                   </>
                 );
@@ -772,6 +836,16 @@ export default function App() {
                   <RadarChart values={(screen.payload.attributes_end as Record<string, number>) ?? {}} />
                 </div>
                 <div className="rounded-xl border border-ink-700/15 bg-white/70 p-4">
+                  {(() => {
+                    const personalityStart = (screen.payload.personality_start_meta as Record<string, string> | undefined) ?? {};
+                    const personalityEnd = (screen.payload.personality_end_meta as Record<string, string> | undefined) ?? {};
+                    return (
+                      <>
+                        {personalityStart.name_cn && <p className="font-body text-sm">初型人格：{personalityStart.name_cn}</p>}
+                        {personalityEnd.name_cn && <p className="font-body text-sm">终局人格：{personalityEnd.name_cn}</p>}
+                      </>
+                    );
+                  })()}
                   <p className="font-body text-sm">成长积分：{Number(screen.payload.score ?? 0)}</p>
                   <p className="font-body text-sm">评级：{String((screen.payload.grade as Record<string, string>)?.label ?? "")}</p>
                   <div className="mt-3 grid grid-cols-2 gap-2">

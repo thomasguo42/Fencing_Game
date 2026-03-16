@@ -1,4 +1,4 @@
-import type { ApiError, PublicScreen, RunsListResponse } from "./types";
+import type { ApiError, ArchiveResponse, PublicScreen, RunsListResponse } from "./types";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -46,6 +46,7 @@ export const api = {
       body: JSON.stringify({ username, password })
     }),
   logout: () => request<{ ok: boolean; message: string }>("/api/auth/logout", { method: "POST" }),
+  getArchive: () => request<ArchiveResponse>("/api/archive"),
   createRun: () => request<{ run_id: string }>("/api/runs", { method: "POST" }),
   listRuns: () => request<RunsListResponse>("/api/runs"),
   getActiveRun: () => request<PublicScreen | { run: null }>("/api/runs/active"),

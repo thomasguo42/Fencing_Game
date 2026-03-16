@@ -339,9 +339,64 @@ def finish_run(db: Session, run: Run) -> dict[str, Any]:
     return build_report_screen(content, run.id, final_state)
 
 
-def list_runs_for_user(db: Session, user_id: int) -> list[Run]:
-    stmt = select(Run).where(Run.user_id == user_id).order_by(Run.created_at.desc())
+def list_runs_for_actor(db: Session, actor: Actor) -> list[Run]:
+    stmt = select(Run)
+    if actor.is_user:
+        stmt = stmt.where(Run.user_id == actor.user_id)
+    elif actor.is_guest:
+        stmt = stmt.where(Run.guest_id == actor.guest_id)
+    else:
+        raise HTTPException(status_code=401, detail="未找到有效会话，请先初始化游客或登录")
+
+    stmt = stmt.order_by(Run.updated_at.desc(), Run.created_at.desc())
     return list(db.execute(stmt).scalars().all())
+
+
+def list_runs_for_user(db: Session, user_id: int) -> list[Run]:
+    return list_runs_for_actor(db, Actor(user_id=user_id, guest_id=None))
+
+
+def build_archive_payload(db: Session, actor: Actor) -> dict[str, Any]:
+    runs = list_runs_for_actor(db, actor)
+    achievement_meta = {}
+    for group in ("core", "special", "legend"):
+        for item in content.achievements[group]:
+            achievement_meta[item["id"]] = item
+
+    achievement_records: list[dict[str, Any]] = []
+    for run in runs:
+        earned_at = run.updated_at or run.created_at
+        for achievement_id in run.achievements or []:
+            meta = achievement_meta.get(achievement_id)
+            if meta is None:
+                continue
+            achievement_records.append(
+                {
+                    "achievement_id": achievement_id,
+                    "name_cn": meta["name_cn"],
+                    "desc_cn": meta["desc_cn"],
+                    "run_id": run.id,
+                    "status": run.status,
+                    "week": run.week,
+                    "earned_at": earned_at.isoformat(),
+                }
+            )
+
+    achievement_records.sort(key=lambda item: item["earned_at"], reverse=True)
+
+    return {
+        "runs": [
+            {
+                "run_id": run.id,
+                "status": run.status,
+                "week": run.week,
+                "created_at": run.created_at.isoformat(),
+                "updated_at": (run.updated_at or run.created_at).isoformat(),
+            }
+            for run in runs
+        ],
+        "achievement_records": achievement_records,
+    }
 
 
 def get_active_guest_run(db: Session, guest_id: str) -> Run | None:

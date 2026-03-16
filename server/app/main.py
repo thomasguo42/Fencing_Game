@@ -11,6 +11,7 @@ from server.app.config import settings
 from server.app.models import User
 from server.app.schemas import (
     AllocateRequest,
+    ArchiveResponse,
     ChooseRequest,
     CreateRunResponse,
     FinalRequest,
@@ -26,6 +27,7 @@ from server.app.service import (
     create_run,
     ensure_guest,
     finish_run,
+    build_archive_payload,
     get_active_guest_run,
     get_run_for_actor,
     get_session_payload,
@@ -153,6 +155,12 @@ def list_runs(request: Request, db: Session = Depends(get_db)) -> RunsListRespon
             for run in runs
         ]
     )
+
+
+@app.get("/api/archive", response_model=ArchiveResponse)
+def get_archive(request: Request, db: Session = Depends(get_db)) -> ArchiveResponse:
+    actor = require_actor(request)
+    return ArchiveResponse(**build_archive_payload(db, actor))
 
 
 @app.get("/api/runs/{run_id}")

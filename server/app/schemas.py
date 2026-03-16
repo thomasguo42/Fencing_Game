@@ -56,3 +56,18 @@ class RunListItem(BaseModel):
 
 class RunsListResponse(BaseModel):
     runs: list[RunListItem]
+
+
+class AchievementRecord(BaseModel):
+    achievement_id: str
+    name_cn: str
+    desc_cn: str
+    run_id: str
+    status: str
+    week: int
+    earned_at: str
+
+
+class ArchiveResponse(BaseModel):
+    runs: list[RunListItem]
+    achievement_records: list[AchievementRecord]

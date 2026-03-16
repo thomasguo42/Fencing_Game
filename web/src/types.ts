@@ -40,3 +40,18 @@ export type RunListItem = {
 export type RunsListResponse = {
   runs: RunListItem[];
 };
+
+export type AchievementRecord = {
+  achievement_id: string;
+  name_cn: string;
+  desc_cn: string;
+  run_id: string;
+  status: string;
+  week: number;
+  earned_at: string;
+};
+
+export type ArchiveResponse = {
+  runs: RunListItem[];
+  achievement_records: AchievementRecord[];
+};

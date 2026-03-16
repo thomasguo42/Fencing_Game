@@ -6,6 +6,17 @@ from engine.content import ContentBundle, collapse_ending_by_id, option_by_id, p
 from engine.models import RunState
 
 
+def _personality_meta(content: ContentBundle, personality_id: str | None) -> dict[str, Any] | None:
+    if not personality_id:
+        return None
+    personality = personality_by_id(content, personality_id)
+    return {
+        "id": personality.get("id"),
+        "name_cn": personality.get("name_cn"),
+        "copy_cn": personality.get("copy_cn"),
+    }
+
+
 def build_allocation_screen(content: ContentBundle, run_id: str, state: RunState) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -121,6 +132,8 @@ def build_collapse_screen(content: ContentBundle, run_id: str, state: RunState) 
             "ending": ending,
             "collapse_week": state.collapse_record.week_num,
             "collapse_attr": state.collapse_record.attr,
+            "personality_start_meta": _personality_meta(content, state.personality_start),
+            "personality_end_meta": _personality_meta(content, state.personality_end),
             "warning_attrs": list(state.warning_attrs),
         },
     }
@@ -180,6 +193,8 @@ def build_report_screen(content: ContentBundle, run_id: str, state: RunState) ->
             "min_attributes": state.min_attributes,
             "personality_start": state.personality_start,
             "personality_end": state.personality_end,
+            "personality_start_meta": _personality_meta(content, state.personality_start),
+            "personality_end_meta": _personality_meta(content, state.personality_end),
             "achievements": detailed_achievements,
             "achievement_ids": state.achievements,
             "report_sections": state.report["report_sections"],
