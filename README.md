@@ -24,6 +24,7 @@
 - 引擎契约：`docs/engine-contract.md`
 - 架构说明：`docs/architecture.md`
 - 内容校验清单：`docs/content-validation.md`
+- 0320 实施日志：`docs/IMPLEMENTATION_LOG_0320.md`
 
 ## 内容数据 (v3.3.0)
 

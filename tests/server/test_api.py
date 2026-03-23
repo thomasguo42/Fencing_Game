@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 import httpx
 
@@ -294,5 +295,123 @@ def test_collapse_screen_includes_personality_meta(monkeypatch) -> None:
 
         assert body["screen"] == "collapse"
         assert body["payload"]["personality_start_meta"]["name_cn"]
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_daily_play_quota_limits_new_runs() -> None:
+    async def scenario(client: httpx.AsyncClient):
+        init = await client.post("/api/guest/init")
+        assert init.status_code == 200
+
+        first = await client.post("/api/runs")
+        assert first.status_code == 200
+
+        second = await client.post("/api/runs")
+        assert second.status_code == 200
+
+        third = await client.post("/api/runs")
+        assert third.status_code == 429
+
+        archive = await client.get("/api/archive")
+        assert archive.status_code == 200
+        quota = archive.json()["play_quota"]
+        assert quota["remaining_today"] == 0
+        assert quota["base_used"] == 2
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_share_redeem_grants_bonus_to_inviter() -> None:
+    async def scenario(_client: httpx.AsyncClient):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as owner:
+            owner_init = await owner.post("/api/guest/init")
+            assert owner_init.status_code == 200
+
+            invite = await owner.post("/api/share/invites")
+            assert invite.status_code == 200
+            token = invite.json()["invite_token"]
+
+            before = await owner.get("/api/archive")
+            assert before.status_code == 200
+            assert before.json()["play_quota"]["bonus_earned"] == 0
+
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as scanner:
+                scanner_init = await scanner.post("/api/guest/init")
+                assert scanner_init.status_code == 200
+
+                redeemed = await scanner.post(f"/api/share/invites/{token}/redeem")
+                assert redeemed.status_code == 200
+                assert redeemed.json()["granted_bonus"] is True
+
+            after = await owner.get("/api/archive")
+            assert after.status_code == 200
+            quota = after.json()["play_quota"]
+            assert quota["bonus_earned"] == 1
+            assert quota["remaining_today"] == 3
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_profile_and_leaderboard_flow(monkeypatch) -> None:
+    seed = 8888
+    monkeypatch.setattr(service, "randbits", lambda _: seed)
+    plan = _safe_week_choices(seed)
+    username = f"leader_user_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(client: httpx.AsyncClient):
+        register = await client.post("/api/auth/register", json={"username": username, "password": "secret123"})
+        assert register.status_code == 200
+
+        login = await client.post("/api/auth/login", json={"username": username, "password": "secret123"})
+        assert login.status_code == 200
+
+        profile = await client.post(
+            "/api/profile",
+            json={
+                "display_name": "侯俊毅",
+                "phone_number": "13416005659",
+                "external_user_id": f"mini-user-{uuid.uuid4().hex[:8]}",
+            },
+        )
+        assert profile.status_code == 200
+
+        create = await client.post("/api/runs")
+        assert create.status_code == 200
+        run_id = create.json()["run_id"]
+
+        allocated = await client.post(f"/api/runs/{run_id}/allocate", json={"attributes": _allocation()})
+        assert allocated.status_code == 200
+        ack = await client.post(f"/api/runs/{run_id}/personality/ack")
+        assert ack.status_code == 200
+
+        screen = ack.json()
+        for choice in plan:
+            picked = await client.post(f"/api/runs/{run_id}/choose", json={"option_id": choice})
+            assert picked.status_code == 200
+            screen = picked.json()
+            if screen["screen"] != "week":
+                break
+
+        assert screen["screen"] == "finals"
+        final = await client.post(f"/api/runs/{run_id}/final", json={"tactic_id": "w12_t06"})
+        assert final.status_code == 200
+
+        archive = await client.get("/api/archive")
+        assert archive.status_code == 200
+        body = archive.json()
+        assert any(item["unlocked"] is True for item in body["achievement_catalog"])
+        assert any(item["unlocked"] is False for item in body["achievement_catalog"])
+
+        leaderboard = await client.get("/api/leaderboards/weekly?page=1")
+        assert leaderboard.status_code == 200
+        entries = leaderboard.json()["entries"]
+        assert entries
+        assert entries[0]["display_name_masked"].startswith("侯**134****5659")
+
+        achievement_board = await client.get("/api/leaderboards/achievements?page=1")
+        assert achievement_board.status_code == 200
+        assert achievement_board.json()["self_entry"] is not None
 
     asyncio.run(_with_api_client(scenario))

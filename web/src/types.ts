@@ -1,4 +1,5 @@
 export type ScreenType =
+  | "start"
   | "allocation"
   | "week"
   | "personality_reveal"
@@ -14,6 +15,7 @@ export type PublicScreen = {
   screen: ScreenType;
   payload: Record<string, unknown>;
   result_cn?: string;
+  result_segments?: string[];
   report_payload?: PublicScreen;
   personality_reveal?: {
     title_cn?: string;
@@ -35,6 +37,9 @@ export type RunListItem = {
   week: number;
   created_at: string;
   updated_at: string;
+  score?: number | null;
+  grade_label?: string | null;
+  final_result?: string | null;
 };
 
 export type RunsListResponse = {
@@ -51,7 +56,78 @@ export type AchievementRecord = {
   earned_at: string;
 };
 
+export type HistoryRecord = {
+  run_id: string;
+  status: string;
+  week: number;
+  played_at: string;
+  score?: number | null;
+  grade_label?: string | null;
+  final_result?: string | null;
+};
+
+export type AchievementCatalogItem = {
+  achievement_id: string;
+  name_cn: string;
+  desc_cn: string;
+  unlocked: boolean;
+};
+
+export type PlayQuota = {
+  remaining_today: number;
+  base_limit: number;
+  base_used: number;
+  bonus_limit: number;
+  bonus_earned: number;
+  total_limit: number;
+  can_start_game: boolean;
+};
+
 export type ArchiveResponse = {
   runs: RunListItem[];
+  history_records: HistoryRecord[];
   achievement_records: AchievementRecord[];
+  achievement_catalog: AchievementCatalogItem[];
+  play_quota: PlayQuota;
+};
+
+export type UserProfile = {
+  username: string;
+  display_name?: string | null;
+  phone_number?: string | null;
+  external_user_id?: string | null;
+};
+
+export type ShareInvite = {
+  invite_token: string;
+  share_url: string;
+  page_path: string;
+  qr_data_url: string;
+  bonus_limit: number;
+};
+
+export type ShareRedeem = {
+  ok: boolean;
+  granted_bonus: boolean;
+  message: string;
+  play_quota: PlayQuota;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  display_name_masked: string;
+  score: number;
+  run_id?: string | null;
+  achieved_at?: string | null;
+};
+
+export type LeaderboardResponse = {
+  board: string;
+  page: number;
+  page_size: number;
+  total_entries: number;
+  period_start?: string | null;
+  period_end?: string | null;
+  entries: LeaderboardEntry[];
+  self_entry?: LeaderboardEntry | null;
 };

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.app.db import Base
@@ -19,6 +19,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_user_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
 
     runs: Mapped[list[Run]] = relationship(back_populates="user")
@@ -102,3 +105,43 @@ class RunWeekLog(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     run: Mapped[Run] = relationship(back_populates="week_logs")
+
+
+class DailyPlayQuota(Base):
+    __tablename__ = "daily_play_quotas"
+    __table_args__ = (UniqueConstraint("actor_type", "actor_key", "quota_date", name="uq_daily_play_quota"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    quota_date: Mapped[date] = mapped_column(Date, nullable=False)
+    used_runs: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bonus_runs: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ShareInvite(Base):
+    __tablename__ = "share_invites"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    invite_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"), nullable=True)
+    page_path: Mapped[str] = mapped_column(String(255), nullable=False)
+    redeem_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ShareRedeem(Base):
+    __tablename__ = "share_redeems"
+    __table_args__ = (UniqueConstraint("invite_id", "scanner_actor_type", "scanner_actor_key", name="uq_share_redeem_actor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invite_id: Mapped[str] = mapped_column(ForeignKey("share_invites.id"), nullable=False)
+    scanner_actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    scanner_actor_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    granted_bonus: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)

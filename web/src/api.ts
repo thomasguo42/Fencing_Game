@@ -1,4 +1,14 @@
-import type { ApiError, ArchiveResponse, PublicScreen, RunsListResponse } from "./types";
+import type {
+  ApiError,
+  ArchiveResponse,
+  LeaderboardResponse,
+  PlayQuota,
+  PublicScreen,
+  RunsListResponse,
+  ShareInvite,
+  ShareRedeem,
+  UserProfile
+} from "./types";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -46,7 +56,19 @@ export const api = {
       body: JSON.stringify({ username, password })
     }),
   logout: () => request<{ ok: boolean; message: string }>("/api/auth/logout", { method: "POST" }),
+  getProfile: () => request<UserProfile>("/api/profile"),
+  saveProfile: (payload: Partial<UserProfile>) =>
+    request<UserProfile>("/api/profile", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   getArchive: () => request<ArchiveResponse>("/api/archive"),
+  getPlayQuota: () => request<PlayQuota>("/api/play-quota"),
+  createShareInvite: (runId?: string) =>
+    request<ShareInvite>(`/api/share/invites${runId ? `?run_id=${encodeURIComponent(runId)}` : ""}`, { method: "POST" }),
+  redeemShareInvite: (inviteToken: string) => request<ShareRedeem>(`/api/share/invites/${inviteToken}/redeem`, { method: "POST" }),
+  getLeaderboard: (board: "weekly" | "monthly" | "achievements", page = 1) =>
+    request<LeaderboardResponse>(`/api/leaderboards/${board}?page=${page}`),
   createRun: () => request<{ run_id: string }>("/api/runs", { method: "POST" }),
   listRuns: () => request<RunsListResponse>("/api/runs"),
   getActiveRun: () => request<PublicScreen | { run: null }>("/api/runs/active"),

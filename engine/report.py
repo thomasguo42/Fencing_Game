@@ -45,7 +45,7 @@ def _turning_point(content: ContentBundle, state: RunState) -> str:
         ending = next(
             e for e in content.endings["collapse_endings"] if e["id"] == state.collapse_record.ending_id
         )
-        return f"第{state.collapse_record.week_num}周《{ending['name_cn']}》"
+        return f"阶段{state.collapse_record.week_num}《{ending['name_cn']}》"
 
     warning_offset = int(content.rules["warning_offset"])
     redlines = content.rules["redlines"]
@@ -57,7 +57,7 @@ def _turning_point(content: ContentBundle, state: RunState) -> str:
             attrs[attr] = max(0, min(100, attrs[attr]))
         if any(attrs[a] <= int(redlines[a]) + warning_offset for a in ATTRS):
             title = week_by_num(content, rec.week_num)["title_cn"]
-            return f"第{rec.week_num}周《{title}》"
+            return f"阶段{rec.week_num}《{title}》"
 
     max_impact = -1
     target = state.history[0] if state.history else None
@@ -68,10 +68,10 @@ def _turning_point(content: ContentBundle, state: RunState) -> str:
             target = rec
 
     if target is None:
-        return "第1周《入队适应期 · 镜中的笨拙》"
+        return "阶段1《入队适应期 · 镜中的笨拙》"
 
     title = week_by_num(content, target.week_num)["title_cn"]
-    return f"第{target.week_num}周《{title}》"
+    return f"阶段{target.week_num}《{title}》"
 
 
 def build_report(content: ContentBundle, state: RunState) -> dict[str, Any]:

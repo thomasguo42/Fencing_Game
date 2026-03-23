@@ -32,6 +32,10 @@ class Settings:
         self.cookie_samesite: str = os.getenv("COOKIE_SAMESITE", "lax").lower()
         self.cookie_domain: str | None = os.getenv("COOKIE_DOMAIN")
         self.session_max_age_seconds: int = int(os.getenv("SESSION_MAX_AGE_SECONDS", str(60 * 60 * 24 * 30)))
+        self.public_web_base_url: str = os.getenv("PUBLIC_WEB_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+        self.share_page_path: str = os.getenv("SHARE_PAGE_PATH", "/package_Game/pages/init/inti")
+        self.daily_play_base_limit: int = int(os.getenv("DAILY_PLAY_BASE_LIMIT", "2"))
+        self.daily_share_bonus_limit: int = int(os.getenv("DAILY_SHARE_BONUS_LIMIT", "3"))
 
         self.auto_create_tables: bool = _as_bool(
             os.getenv("AUTO_CREATE_TABLES"),

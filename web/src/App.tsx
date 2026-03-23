@@ -6,7 +6,7 @@ import { ATTR_CN } from "./copy";
 import { EdgeWarnings } from "./components/EdgeWarnings";
 import { MarkdownText } from "./components/MarkdownText";
 import { RadarChart } from "./components/RadarChart";
-import type { ArchiveResponse, PublicScreen } from "./types";
+import type { ArchiveResponse, LeaderboardResponse, PublicScreen, ShareInvite, UserProfile } from "./types";
 
 const ATTRS = ["stamina", "skill", "mind", "academics", "social", "finance"] as const;
 const ALLOC_TOTAL = 250;
@@ -15,6 +15,7 @@ const ALLOC_MAX = 60;
 
 type ResultModal = {
   text: string;
+  segments: string[];
   next: PublicScreen;
 };
 
@@ -28,6 +29,7 @@ function getWarningAttrs(screen: PublicScreen | null): string[] {
 
 function statusCn(status: string): string {
   const map: Record<string, string> = {
+    idle: "待开始",
     in_progress: "进行中",
     finished: "已完成",
     collapsed: "崩解中止"
@@ -63,6 +65,11 @@ function allocationWarningText(total: number): string | null {
   return `总点数不足${ALLOC_TOTAL}（当前 ${total}），还需分配 ${ALLOC_TOTAL - total} 点。`;
 }
 
+function stageLabel(week: number): string {
+  if (week <= 0) return "定影前";
+  return `阶段 ${week}`;
+}
+
 function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -75,10 +82,24 @@ function formatDateTime(value: string): string {
   });
 }
 
+function buildStartScreen(): PublicScreen {
+  return {
+    run_id: "pending",
+    status: "idle",
+    week: 0,
+    screen: "start",
+    payload: {
+      title_cn: "准备开始新的旅程",
+      body_cn: "点击“开始游戏”后会消耗 1 次当日游玩机会。"
+    }
+  };
+}
+
 export default function App() {
   const [screen, setScreen] = useState<PublicScreen | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [resultModal, setResultModal] = useState<ResultModal | null>(null);
   const [showOpening, setShowOpening] = useState(false);
@@ -89,8 +110,16 @@ export default function App() {
 
   const [sessionMode, setSessionMode] = useState<"guest" | "user">("guest");
   const [archive, setArchive] = useState<ArchiveResponse | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [shareInvite, setShareInvite] = useState<ShareInvite | null>(null);
+  const [leaderboardBoard, setLeaderboardBoard] = useState<"weekly" | "monthly" | "achievements">("weekly");
+  const [leaderboardPage, setLeaderboardPage] = useState(1);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [profilePhoneNumber, setProfilePhoneNumber] = useState("");
+  const [profileExternalUserId, setProfileExternalUserId] = useState("");
 
   const [allocation, setAllocation] = useState<Record<string, number>>({
     stamina: 42,
@@ -108,6 +137,44 @@ export default function App() {
   const refreshArchive = async () => {
     const next = await api.getArchive();
     setArchive(next);
+  };
+
+  const refreshProfile = async () => {
+    try {
+      const next = await api.getProfile();
+      setProfile(next);
+      setProfileDisplayName(next.display_name ?? "");
+      setProfilePhoneNumber(next.phone_number ?? "");
+      setProfileExternalUserId(next.external_user_id ?? "");
+    } catch {
+      setProfile(null);
+      setProfileDisplayName("");
+      setProfilePhoneNumber("");
+      setProfileExternalUserId("");
+    }
+  };
+
+  const refreshLeaderboard = async (board = leaderboardBoard, page = leaderboardPage) => {
+    const next = await api.getLeaderboard(board, page);
+    setLeaderboard(next);
+  };
+
+  const redeemShareTokenFromUrl = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const shareToken = params.get("share_token");
+    if (!shareToken) return;
+
+    try {
+      const redeemed = await api.redeemShareInvite(shareToken);
+      setNotice(redeemed.message);
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      params.delete("share_token");
+      const nextSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+      window.history.replaceState({}, "", nextUrl);
+    }
   };
 
   const applyCurrentScreen = (current: PublicScreen) => {
@@ -129,20 +196,27 @@ export default function App() {
 
   const loadGuestContext = async () => {
     setSessionMode("guest");
+    setProfile(null);
+    setProfileDisplayName("");
+    setProfilePhoneNumber("");
+    setProfileExternalUserId("");
 
     await api.guestInit();
     const active = await api.getActiveRun();
 
     let current: PublicScreen;
     if ((active as { run?: null }).run === null) {
-      const created = await api.createRun();
-      current = await api.getRun(created.run_id);
+      current = buildStartScreen();
     } else {
       current = active as PublicScreen;
     }
 
     applyCurrentScreen(current);
     await refreshArchive();
+    await refreshLeaderboard();
+    await redeemShareTokenFromUrl();
+    await refreshArchive();
+    await refreshLeaderboard();
   };
 
   const loadUserContext = async (preferredRunId?: string) => {
@@ -152,14 +226,24 @@ export default function App() {
     let targetRunId = preferredRunId || listing.runs[0]?.run_id;
 
     if (!targetRunId) {
-      const created = await api.createRun();
-      targetRunId = created.run_id;
-      listing = await api.listRuns();
+      applyCurrentScreen(buildStartScreen());
+      await refreshArchive();
+      await refreshProfile();
+      await refreshLeaderboard();
+      await redeemShareTokenFromUrl();
+      await refreshArchive();
+      await refreshLeaderboard();
+      return;
     }
 
     const current = await api.getRun(targetRunId);
     applyCurrentScreen(current);
     await refreshArchive();
+    await refreshProfile();
+    await refreshLeaderboard();
+    await redeemShareTokenFromUrl();
+    await refreshArchive();
+    await refreshLeaderboard();
   };
 
   useEffect(() => {
@@ -206,6 +290,11 @@ export default function App() {
 
     return () => window.clearInterval(timer);
   }, [showOpening, screen]);
+
+  useEffect(() => {
+    if (!screen) return;
+    void refreshLeaderboard();
+  }, [leaderboardBoard, leaderboardPage, screen]);
 
   const warningAttrs = getWarningAttrs(screen);
 
@@ -288,6 +377,7 @@ export default function App() {
       }
       setActionBusy(true);
       setError(null);
+      setNotice(null);
       await api.logout();
       await loadGuestContext();
     } catch (e) {
@@ -306,6 +396,7 @@ export default function App() {
       }
       setActionBusy(true);
       setError(null);
+      setNotice(null);
       const created = await api.createRun();
       if (sessionMode === "user") {
         await loadUserContext(created.run_id);
@@ -314,8 +405,10 @@ export default function App() {
         applyCurrentScreen(current);
         await refreshArchive();
       }
+      await refreshLeaderboard();
     } catch (e) {
       setError((e as Error).message);
+      await refreshArchive();
     } finally {
       setActionBusy(false);
     }
@@ -331,6 +424,7 @@ export default function App() {
       setError(null);
       const current = await api.getRun(runId);
       applyCurrentScreen(current);
+      setNotice(current.screen === "report" ? "已载入该次旅程的结算报告。" : "已载入该次旅程。");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -352,6 +446,7 @@ export default function App() {
     try {
       setActionBusy(true);
       setError(null);
+      setNotice(null);
       setResultModal(null);
       const next = await api.allocate(screen.run_id, allocation);
       setShowOpening(false);
@@ -373,6 +468,7 @@ export default function App() {
       }
       setActionBusy(true);
       setError(null);
+      setNotice(null);
       const next = await api.ackPersonality(screen.run_id);
       applyCurrentScreen(next);
       await refreshArchive();
@@ -394,7 +490,7 @@ export default function App() {
       setError(null);
       const next = await api.choose(screen.run_id, optionId);
       if (next.result_cn) {
-        setResultModal({ text: next.result_cn, next });
+        setResultModal({ text: next.result_cn, segments: next.result_segments ?? [next.result_cn], next });
       } else {
         applyCurrentScreen(next);
       }
@@ -415,9 +511,11 @@ export default function App() {
       }
       setActionBusy(true);
       setError(null);
+      setNotice(null);
       const next = await api.chooseFinal(screen.run_id, tacticId);
       applyCurrentScreen(next);
       await refreshArchive();
+      await refreshLeaderboard();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -434,9 +532,46 @@ export default function App() {
       }
       setActionBusy(true);
       setError(null);
+      setNotice(null);
       const next = await api.finish(screen.run_id);
       applyCurrentScreen(next);
       await refreshArchive();
+      await refreshLeaderboard();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    try {
+      if (sessionMode !== "user") return;
+      setActionBusy(true);
+      setError(null);
+      const next = await api.saveProfile({
+        display_name: profileDisplayName,
+        phone_number: profilePhoneNumber,
+        external_user_id: profileExternalUserId
+      });
+      setProfile(next);
+      setNotice("用户资料已更新，排行榜将使用最新资料脱敏展示。");
+      await refreshLeaderboard();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const createShareInvite = async () => {
+    if (!screen) return;
+    try {
+      setActionBusy(true);
+      setError(null);
+      const next = await api.createShareInvite(screen.run_id);
+      setShareInvite(next);
+      setNotice("分享二维码已生成，被扫码进入后可为你增加一次当日游玩机会。");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -464,7 +599,14 @@ export default function App() {
         <header className="mb-6 rounded-2xl border border-ink-700/20 bg-ink-50/80 p-5 shadow-panel backdrop-blur">
           <p className="font-body text-xs uppercase tracking-[0.22em] text-ink-700/80">第一阶段 / v3.3.0</p>
           <h1 className="font-heading text-2xl font-semibold md:text-4xl">剑之初程：淬炼之路</h1>
-          <p className="mt-2 font-body text-sm text-ink-700">当前进度：第 {screen.week} 周 · 状态：{statusCn(screen.status)}</p>
+          <p className="mt-2 font-body text-sm text-ink-700">当前进度：{stageLabel(screen.week)} · 状态：{statusCn(screen.status)}</p>
+          {archive?.play_quota && (
+            <p className="mt-1 font-body text-sm text-ink-700">
+              今日剩余次数：{archive.play_quota.remaining_today} / {archive.play_quota.total_limit}
+              {" · "}基础已用 {archive.play_quota.base_used} 次
+              {" · "}分享加次 {archive.play_quota.bonus_earned} / {archive.play_quota.bonus_limit}
+            </p>
+          )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -493,7 +635,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={handleCreateRun}
-                    disabled={actionBusy || isViewingHistory}
+                    disabled={actionBusy || isViewingHistory || !archive?.play_quota?.can_start_game}
                     className="rounded bg-bronze px-3 py-1 text-xs text-white disabled:opacity-50"
                   >
                     新建旅程
@@ -533,7 +675,7 @@ export default function App() {
                   <p className="font-body text-xs text-ink-700">已登录用户模式，可保留多个旅程。</p>
                   <button
                     onClick={handleCreateRun}
-                    disabled={actionBusy}
+                    disabled={actionBusy || !archive?.play_quota?.can_start_game}
                     className="rounded bg-bronze px-3 py-1 text-xs text-white disabled:opacity-50"
                   >
                     新建旅程
@@ -546,63 +688,230 @@ export default function App() {
                     退出登录
                   </button>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={profileDisplayName}
+                    onChange={(e) => setProfileDisplayName(e.target.value)}
+                    placeholder="排行榜昵称"
+                    className="rounded border border-ink-700/25 px-2 py-1 text-sm"
+                  />
+                  <input
+                    value={profilePhoneNumber}
+                    onChange={(e) => setProfilePhoneNumber(e.target.value)}
+                    placeholder="手机号"
+                    className="rounded border border-ink-700/25 px-2 py-1 text-sm"
+                  />
+                  <input
+                    value={profileExternalUserId}
+                    onChange={(e) => setProfileExternalUserId(e.target.value)}
+                    placeholder="外部用户ID"
+                    className="rounded border border-ink-700/25 px-2 py-1 text-sm"
+                  />
+                  <button
+                    onClick={saveProfile}
+                    disabled={actionBusy}
+                    className="rounded bg-bronze px-3 py-1 text-xs text-white disabled:opacity-50"
+                  >
+                    保存资料
+                  </button>
+                </div>
+                {profile && (
+                  <p className="font-body text-xs text-ink-700">
+                    当前资料：{profile.display_name || profile.username}
+                    {profile.phone_number ? ` · ${profile.phone_number}` : ""}
+                  </p>
+                )}
               </div>
             )}
           </div>
         </header>
 
         {error && <div className="mb-4 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 font-body text-sm text-danger">{error}</div>}
+        {notice && <div className="mb-4 rounded-xl border border-bronze/35 bg-bronze/10 px-4 py-3 font-body text-sm text-ink-800">{notice}</div>}
 
         {archive && (
-          <section className="mb-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
-              <h2 className="font-heading text-xl">旅程记录</h2>
-              <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
-                {archive.runs.length === 0 ? (
-                  <p className="font-body text-sm text-ink-700">还没有可回看的旅程记录。</p>
-                ) : (
-                  archive.runs.map((run) => (
-                    <button
-                      key={run.run_id}
-                      onClick={() => handleOpenRun(run.run_id)}
-                      disabled={actionBusy || isViewingHistory}
-                      className="block w-full rounded-xl border border-ink-700/20 bg-white/80 px-3 py-2 text-left transition hover:border-bronze/40 disabled:opacity-50"
+          <section className="mb-6 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
+                <h2 className="font-heading text-xl">历史报告</h2>
+                <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
+                  {archive.history_records.length === 0 ? (
+                    <p className="font-body text-sm text-ink-700">还没有可回看的结算报告。</p>
+                  ) : (
+                    archive.history_records.map((record) => (
+                      <button
+                        key={record.run_id}
+                        onClick={() => handleOpenRun(record.run_id)}
+                        disabled={actionBusy || isViewingHistory}
+                        className="block w-full rounded-xl border border-ink-700/20 bg-white/80 px-3 py-2 text-left transition hover:border-bronze/40 disabled:opacity-50"
+                      >
+                        <p className="font-heading text-sm">
+                          旅程 {record.run_id.slice(0, 8)} · {stageLabel(record.week)} · {statusCn(record.status)}
+                        </p>
+                        <p className="mt-1 font-body text-xs text-ink-700">
+                          报告时间：{formatDateTime(record.played_at)}
+                          {record.score ? ` · 积分 ${record.score}` : ""}
+                          {record.grade_label ? ` · ${record.grade_label}` : ""}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {archive.runs.some((run) => run.status === "in_progress") && (
+                  <div className="mt-4 rounded-xl border border-ink-700/15 bg-white/65 p-3">
+                    <p className="font-heading text-sm">进行中旅程</p>
+                    <div className="mt-2 space-y-2">
+                      {archive.runs
+                        .filter((run) => run.status === "in_progress")
+                        .map((run) => (
+                          <button
+                            key={run.run_id}
+                            onClick={() => handleOpenRun(run.run_id)}
+                            disabled={actionBusy || isViewingHistory}
+                            className="block w-full rounded-lg border border-ink-700/15 bg-white px-3 py-2 text-left text-xs text-ink-700 disabled:opacity-50"
+                          >
+                            旅程 {run.run_id.slice(0, 8)} · {stageLabel(run.week)} · 最近游玩 {formatDateTime(run.updated_at)}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
+                <h2 className="font-heading text-xl">成就图鉴</h2>
+                <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
+                  {archive.achievement_catalog.map((item) => (
+                    <div
+                      key={item.achievement_id}
+                      className={`rounded-xl border px-3 py-2 ${item.unlocked ? "border-bronze/30 bg-bronze/10" : "border-ink-700/15 bg-white/80"}`}
                     >
-                      <p className="font-heading text-sm">
-                        旅程 {run.run_id.slice(0, 8)} · 第 {run.week} 周 · {statusCn(run.status)}
-                      </p>
-                      <p className="mt-1 font-body text-xs text-ink-700">
-                        最近游玩：{formatDateTime(run.updated_at)}
-                        {screen?.run_id === run.run_id ? " · 当前查看中" : ""}
-                      </p>
-                    </button>
-                  ))
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-heading text-sm">{item.name_cn}</p>
+                        <span className="rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset ring-ink-700/15">
+                          {item.unlocked ? "已解锁" : "未解锁"}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-body text-xs text-ink-700">{item.desc_cn}</p>
+                    </div>
+                  ))}
+                </div>
+                {archive.achievement_records.length > 0 && (
+                  <div className="mt-4 rounded-xl border border-ink-700/15 bg-white/65 p-3">
+                    <p className="font-heading text-sm">最近解锁</p>
+                    <div className="mt-2 space-y-2">
+                      {archive.achievement_records.slice(0, 5).map((record) => (
+                        <div key={`${record.run_id}-${record.achievement_id}`} className="rounded-lg border border-bronze/20 bg-bronze/5 px-3 py-2">
+                          <p className="font-body text-xs text-ink-900">{record.name_cn}</p>
+                          <p className="mt-1 font-body text-[11px] text-ink-700/80">{formatDateTime(record.earned_at)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
 
             <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
-              <h2 className="font-heading text-xl">成就记录</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-heading text-xl">排行榜</h2>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["weekly", "周榜"],
+                    ["monthly", "月榜"],
+                    ["achievements", "成就解锁榜"]
+                  ] as const).map(([board, label]) => (
+                    <button
+                      key={board}
+                      onClick={() => {
+                        setLeaderboardBoard(board);
+                        setLeaderboardPage(1);
+                      }}
+                      className={`rounded-full px-3 py-1 text-xs ${leaderboardBoard === board ? "bg-ink-900 text-white" : "bg-white text-ink-900 ring-1 ring-ink-700/20"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
-                {archive.achievement_records.length === 0 ? (
-                  <p className="font-body text-sm text-ink-700">当前还没有已获得的成就记录。</p>
+                {!leaderboard || leaderboard.entries.length === 0 ? (
+                  <p className="font-body text-sm text-ink-700">当前榜单还没有可展示的数据。</p>
                 ) : (
-                  archive.achievement_records.map((record) => (
-                    <div key={`${record.run_id}-${record.achievement_id}`} className="rounded-xl border border-bronze/25 bg-white/80 px-3 py-2">
-                      <p className="font-heading text-sm">{record.name_cn}</p>
-                      <p className="mt-1 font-body text-xs text-ink-700">{record.desc_cn}</p>
+                  leaderboard.entries.map((entry) => (
+                    <div key={`${leaderboard.board}-${entry.rank}-${entry.display_name_masked}`} className="rounded-xl border border-ink-700/15 bg-white/80 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-heading text-sm">
+                          #{entry.rank} · {entry.display_name_masked}
+                        </p>
+                        <p className="font-body text-sm text-ink-900">{entry.score}</p>
+                      </div>
                       <p className="mt-1 font-body text-[11px] text-ink-700/80">
-                        旅程 {record.run_id.slice(0, 8)} · {statusCn(record.status)} · {formatDateTime(record.earned_at)}
+                        {entry.achieved_at ? formatDateTime(entry.achieved_at) : "长期累计"}
                       </p>
                     </div>
                   ))
                 )}
               </div>
+              {leaderboard && (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-body text-xs text-ink-700">
+                    {leaderboard.period_start && leaderboard.period_end
+                      ? `统计区间：${leaderboard.period_start} 至 ${leaderboard.period_end}`
+                      : "统计区间：长期累计"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setLeaderboardPage((page) => Math.max(1, page - 1))}
+                      disabled={leaderboardPage <= 1}
+                      className="rounded bg-white px-3 py-1 text-xs ring-1 ring-ink-700/20 disabled:opacity-40"
+                    >
+                      上一页
+                    </button>
+                    <span className="font-body text-xs text-ink-700">第 {leaderboardPage} 页</span>
+                    <button
+                      onClick={() => setLeaderboardPage((page) => page + 1)}
+                      disabled={leaderboardPage * leaderboard.page_size >= leaderboard.total_entries}
+                      className="rounded bg-white px-3 py-1 text-xs ring-1 ring-ink-700/20 disabled:opacity-40"
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+              )}
+              {leaderboard?.self_entry && (
+                <div className="mt-4 rounded-xl border border-bronze/30 bg-bronze/10 px-3 py-3">
+                  <p className="font-heading text-sm">我的排名</p>
+                  <p className="mt-1 font-body text-sm">
+                    #{leaderboard.self_entry.rank} · {leaderboard.self_entry.display_name_masked} · {leaderboard.self_entry.score}
+                  </p>
+                </div>
+              )}
             </div>
           </section>
         )}
 
         <AnimatePresence mode="wait">
+          {screen.screen === "start" && (
+            <motion.section
+              key="start"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel md:p-8"
+            >
+              <h2 className="font-heading text-2xl md:text-3xl">{String(screen.payload.title_cn ?? "准备开始新的旅程")}</h2>
+              <p className="mt-3 font-body text-sm leading-7 text-ink-700">{String(screen.payload.body_cn ?? "")}</p>
+              <button
+                disabled={actionBusy || isViewingHistory || !archive?.play_quota?.can_start_game}
+                className="mt-6 rounded-full bg-bronze px-6 py-2 font-body text-sm font-semibold text-white transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={handleCreateRun}
+              >
+                {actionBusy ? "处理中…" : "开始游戏"}
+              </button>
+            </motion.section>
+          )}
+
           {screen.screen === "allocation" && (
             <motion.section
               key="allocation"
@@ -830,7 +1139,16 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-5 rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel md:p-8"
             >
-              <h2 className="font-heading text-2xl">第一学年成长报告</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-heading text-2xl">第一学年成长报告</h2>
+                <button
+                  onClick={createShareInvite}
+                  disabled={actionBusy || isViewingHistory}
+                  className="rounded-full bg-ink-900 px-4 py-2 font-body text-xs text-white disabled:opacity-50"
+                >
+                  生成分享二维码
+                </button>
+              </div>
               <div className="grid gap-5 md:grid-cols-2">
                 <div className="rounded-xl border border-ink-700/15 bg-white/70 p-4">
                   <RadarChart values={(screen.payload.attributes_end as Record<string, number>) ?? {}} />
@@ -903,7 +1221,11 @@ export default function App() {
               className="w-full max-w-xl rounded-2xl bg-ink-50 p-5 shadow-panel"
             >
               <h3 className="font-heading text-xl">本周结果</h3>
-              <p className="mt-2 whitespace-pre-line font-body text-sm leading-7 text-ink-700">{resultModal.text}</p>
+              <div className="mt-2 space-y-1 font-body text-sm leading-7 text-ink-700">
+                {resultModal.segments.map((segment, index) => (
+                  <p key={`${segment}-${index}`}>{segment}</p>
+                ))}
+              </div>
               <button
                 className="mt-4 rounded-full bg-ink-900 px-4 py-2 font-body text-sm text-white"
                 onClick={() => {
@@ -913,6 +1235,41 @@ export default function App() {
               >
                 继续
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {shareInvite && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/45 p-4"
+          >
+            <motion.div
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -10, opacity: 0 }}
+              className="w-full max-w-xl rounded-2xl bg-ink-50 p-5 shadow-panel"
+            >
+              <h3 className="font-heading text-xl">分享二维码</h3>
+              <p className="mt-2 font-body text-sm text-ink-700">
+                扫码进入游戏首页后，可为你的账号增加 1 次当日游玩机会，单日最多增加 {shareInvite.bonus_limit} 次。
+              </p>
+              <div className="mt-4 flex justify-center">
+                <img src={shareInvite.qr_data_url} alt="分享二维码" className="h-56 w-56 rounded-lg border border-ink-700/15 bg-white p-2" />
+              </div>
+              <p className="mt-3 break-all font-body text-xs text-ink-700">{shareInvite.share_url}</p>
+              <div className="mt-4 flex justify-end">
+                <button
+                  className="rounded-full bg-ink-900 px-4 py-2 font-body text-sm text-white"
+                  onClick={() => setShareInvite(null)}
+                >
+                  关闭
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

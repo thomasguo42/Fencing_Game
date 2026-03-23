@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import base64
+import io
 from dataclasses import replace
-from secrets import randbits
+from datetime import UTC, date, datetime, timedelta
+from secrets import randbits, token_urlsafe
 from typing import Any
 
+import qrcode
 from fastapi import HTTPException, Request, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -12,7 +16,7 @@ from engine import GameEngine
 from engine.content import option_by_id
 from engine.models import RunState
 from server.app.config import settings
-from server.app.models import Guest, Run, RunWeekLog, User
+from server.app.models import DailyPlayQuota, Guest, Run, RunWeekLog, ShareInvite, ShareRedeem, User
 from server.app.presentation import (
     build_allocation_screen,
     build_collapse_screen,
@@ -34,6 +38,22 @@ class Actor:
     def __init__(self, user_id: int | None, guest_id: str | None):
         self.user_id = user_id
         self.guest_id = guest_id
+
+    @property
+    def actor_type(self) -> str:
+        if self.is_user:
+            return "user"
+        if self.is_guest:
+            return "guest"
+        return "anonymous"
+
+    @property
+    def actor_key(self) -> str:
+        if self.is_user:
+            return str(self.user_id)
+        if self.is_guest:
+            return str(self.guest_id)
+        return ""
 
     @property
     def is_user(self) -> bool:
@@ -112,9 +132,167 @@ def load_user_by_username(db: Session, username: str) -> User | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def load_user_profile(db: Session, user_id: int) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="未找到对应用户")
+    return user
+
+
+def update_user_profile(
+    db: Session,
+    actor: Actor,
+    *,
+    display_name: str | None,
+    phone_number: str | None,
+    external_user_id: str | None,
+) -> User:
+    if not actor.is_user:
+        raise HTTPException(status_code=400, detail="仅登录用户可更新资料")
+
+    user = load_user_profile(db, actor.user_id)
+    if external_user_id:
+        stmt = select(User).where(User.external_user_id == external_user_id, User.id != user.id)
+        existing = db.execute(stmt).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=400, detail="该外部用户标识已被绑定")
+
+    user.display_name = display_name.strip() if display_name else None
+    user.phone_number = phone_number.strip() if phone_number else None
+    user.external_user_id = external_user_id.strip() if external_user_id else None
+    db.add(user)
+    db.flush()
+    return user
+
+
 def _fetch_run_week_logs(db: Session, run_id: str) -> list[RunWeekLog]:
     stmt = select(RunWeekLog).where(RunWeekLog.run_id == run_id)
     return list(db.execute(stmt).scalars().all())
+
+
+def _today_utc() -> date:
+    return datetime.now(UTC).date()
+
+
+def _week_bounds(today: date) -> tuple[date, date]:
+    start = today - timedelta(days=today.weekday())
+    return start, start + timedelta(days=7)
+
+
+def _month_bounds(today: date) -> tuple[date, date]:
+    start = today.replace(day=1)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return start, end
+
+
+def _mask_name(display_name: str | None) -> str:
+    if not display_name:
+        return "匿名玩家"
+    if len(display_name) <= 1:
+        return f"{display_name}**"
+    return f"{display_name[0]}**"
+
+
+def _mask_phone(phone_number: str | None) -> str:
+    digits = "".join(ch for ch in (phone_number or "") if ch.isdigit())
+    if len(digits) >= 7:
+        return f"{digits[:3]}****{digits[-4:]}"
+    if digits:
+        return digits[:3] + "****"
+    return ""
+
+
+def _masked_identity(user: User) -> str:
+    masked_name = _mask_name(user.display_name or user.username)
+    masked_phone = _mask_phone(user.phone_number)
+    return f"{masked_name}{masked_phone}" if masked_phone else masked_name
+
+
+def _split_result_segments(text: str) -> list[str]:
+    segments: list[str] = []
+    for block in text.split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        parts: list[str] = []
+        current = ""
+        for ch in block:
+            current += ch
+            if ch in "，。！？；：":
+                parts.append(current.strip())
+                current = ""
+        if current.strip():
+            parts.append(current.strip())
+        segments.extend(part for part in parts if part)
+    return segments or [text]
+
+
+def _get_or_create_daily_quota(db: Session, actor: Actor, quota_date: date | None = None) -> DailyPlayQuota:
+    day = quota_date or _today_utc()
+    stmt = select(DailyPlayQuota).where(
+        DailyPlayQuota.actor_type == actor.actor_type,
+        DailyPlayQuota.actor_key == actor.actor_key,
+        DailyPlayQuota.quota_date == day,
+    )
+    quota = db.execute(stmt).scalar_one_or_none()
+    if quota is not None:
+        return quota
+
+    quota = DailyPlayQuota(
+        actor_type=actor.actor_type,
+        actor_key=actor.actor_key,
+        quota_date=day,
+        used_runs=0,
+        bonus_runs=0,
+    )
+    db.add(quota)
+    db.flush()
+    return quota
+
+
+def _build_play_quota_payload(quota: DailyPlayQuota) -> dict[str, Any]:
+    bonus_earned = min(quota.bonus_runs, settings.daily_share_bonus_limit)
+    total_limit = settings.daily_play_base_limit + bonus_earned
+    remaining_today = max(total_limit - quota.used_runs, 0)
+    return {
+        "remaining_today": remaining_today,
+        "base_limit": settings.daily_play_base_limit,
+        "base_used": quota.used_runs,
+        "bonus_limit": settings.daily_share_bonus_limit,
+        "bonus_earned": bonus_earned,
+        "total_limit": total_limit,
+        "can_start_game": remaining_today > 0,
+    }
+
+
+def _consume_play_attempt_or_raise(db: Session, actor: Actor) -> dict[str, Any]:
+    quota = _get_or_create_daily_quota(db, actor)
+    payload = _build_play_quota_payload(quota)
+    if payload["remaining_today"] <= 0:
+        raise HTTPException(status_code=429, detail="今日游玩次数已用尽，可通过分享获得额外次数。")
+    quota.used_runs += 1
+    db.add(quota)
+    db.flush()
+    return _build_play_quota_payload(quota)
+
+
+def _grant_share_bonus(db: Session, actor_type: str, actor_key: str) -> bool:
+    actor = Actor(user_id=int(actor_key) if actor_type == "user" else None, guest_id=actor_key if actor_type == "guest" else None)
+    quota = _get_or_create_daily_quota(db, actor)
+    if quota.bonus_runs >= settings.daily_share_bonus_limit:
+        return False
+    quota.bonus_runs += 1
+    db.add(quota)
+    db.flush()
+    return True
+
+
+def get_play_quota_payload(db: Session, actor: Actor) -> dict[str, Any]:
+    quota = _get_or_create_daily_quota(db, actor)
+    return _build_play_quota_payload(quota)
 
 
 def _run_to_public(db: Session, run: Run) -> dict[str, Any]:
@@ -195,6 +373,8 @@ def create_run(db: Session, actor: Actor) -> Run:
         guest_id = actor.guest_id
     else:
         raise HTTPException(status_code=401, detail="未找到有效会话，请先初始化游客或登录")
+
+    _consume_play_attempt_or_raise(db, actor)
 
     if owner_type == "guest":
         db.execute(
@@ -299,6 +479,7 @@ def choose_option(db: Session, run: Run, option_id: str) -> dict[str, Any]:
         payload = build_week_screen(content, run.id, next_state, list(next_state.presented_options))
 
     payload["result_cn"] = chosen["result_cn"]
+    payload["result_segments"] = _split_result_segments(chosen["result_cn"])
     payload["warning_attrs"] = list(next_state.warning_attrs)
     payload["chosen_option_id"] = option_id
     return payload
@@ -384,6 +565,33 @@ def build_archive_payload(db: Session, actor: Actor) -> dict[str, Any]:
 
     achievement_records.sort(key=lambda item: item["earned_at"], reverse=True)
 
+    unlocked_ids = {item["achievement_id"] for item in achievement_records}
+    achievement_catalog: list[dict[str, Any]] = []
+    for group in ("core", "special", "legend"):
+        for item in content.achievements[group]:
+            achievement_catalog.append(
+                {
+                    "achievement_id": item["id"],
+                    "name_cn": item["name_cn"],
+                    "desc_cn": item["desc_cn"],
+                    "unlocked": item["id"] in unlocked_ids,
+                }
+            )
+
+    history_records = [
+        {
+            "run_id": run.id,
+            "status": run.status,
+            "week": run.week,
+            "played_at": (run.updated_at or run.created_at).isoformat(),
+            "score": run.score,
+            "grade_label": run.grade_label,
+            "final_result": run.final_result,
+        }
+        for run in runs
+        if run.report is not None
+    ]
+
     return {
         "runs": [
             {
@@ -392,10 +600,230 @@ def build_archive_payload(db: Session, actor: Actor) -> dict[str, Any]:
                 "week": run.week,
                 "created_at": run.created_at.isoformat(),
                 "updated_at": (run.updated_at or run.created_at).isoformat(),
+                "score": run.score,
+                "grade_label": run.grade_label,
+                "final_result": run.final_result,
             }
             for run in runs
         ],
+        "history_records": history_records,
         "achievement_records": achievement_records,
+        "achievement_catalog": achievement_catalog,
+        "play_quota": get_play_quota_payload(db, actor),
+    }
+
+
+def create_share_invite(db: Session, actor: Actor, source_run_id: str | None = None) -> dict[str, Any]:
+    if source_run_id is not None:
+        run = get_run_for_actor(db, actor, source_run_id)
+        if run.report is None:
+            raise HTTPException(status_code=400, detail="仅已生成报告的旅程可创建分享。")
+
+    invite_token = token_urlsafe(24)
+    invite = ShareInvite(
+        invite_token=invite_token,
+        actor_type=actor.actor_type,
+        actor_key=actor.actor_key,
+        source_run_id=source_run_id,
+        page_path=settings.share_page_path,
+        redeem_count=0,
+    )
+    db.add(invite)
+    db.flush()
+
+    share_url = f"{settings.public_web_base_url}/?share_token={invite.invite_token}"
+    qr_image = qrcode.make(share_url)
+    buffer = io.BytesIO()
+    qr_image.save(buffer, format="PNG")
+    qr_data_url = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    return {
+        "invite_token": invite.invite_token,
+        "share_url": share_url,
+        "page_path": settings.share_page_path,
+        "qr_data_url": qr_data_url,
+        "bonus_limit": settings.daily_share_bonus_limit,
+    }
+
+
+def redeem_share_invite(db: Session, actor: Actor, invite_token: str) -> dict[str, Any]:
+    stmt = select(ShareInvite).where(ShareInvite.invite_token == invite_token)
+    invite = db.execute(stmt).scalar_one_or_none()
+    if invite is None:
+        raise HTTPException(status_code=404, detail="未找到对应分享二维码。")
+
+    if invite.actor_type == actor.actor_type and invite.actor_key == actor.actor_key:
+        return {
+            "ok": True,
+            "granted_bonus": False,
+            "message": "不能通过自己的分享链接为自己增加次数。",
+            "play_quota": get_play_quota_payload(db, actor),
+        }
+
+    existing_stmt = select(ShareRedeem).where(
+        ShareRedeem.invite_id == invite.id,
+        ShareRedeem.scanner_actor_type == actor.actor_type,
+        ShareRedeem.scanner_actor_key == actor.actor_key,
+    )
+    existing = db.execute(existing_stmt).scalar_one_or_none()
+    if existing is not None:
+        return {
+            "ok": True,
+            "granted_bonus": bool(existing.granted_bonus),
+            "message": "该分享链接今日已为你结算过。",
+            "play_quota": get_play_quota_payload(db, actor),
+        }
+
+    granted_bonus = _grant_share_bonus(db, invite.actor_type, invite.actor_key)
+    redeem = ShareRedeem(
+        invite_id=invite.id,
+        scanner_actor_type=actor.actor_type,
+        scanner_actor_key=actor.actor_key,
+        granted_bonus=granted_bonus,
+    )
+    db.add(redeem)
+    invite.redeem_count += 1
+    db.add(invite)
+    db.flush()
+
+    return {
+        "ok": True,
+        "granted_bonus": granted_bonus,
+        "message": "分享加次已到账。" if granted_bonus else "对方今日通过分享可获得的额外次数已达上限。",
+        "play_quota": get_play_quota_payload(db, actor),
+    }
+
+
+def _scoreboard_runs(
+    db: Session,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> list[Run]:
+    stmt = select(Run).where(Run.user_id.is_not(None), Run.score.is_not(None), Run.report.is_not(None))
+    runs = list(db.execute(stmt).scalars().all())
+    if start is None or end is None:
+        return runs
+
+    filtered: list[Run] = []
+    for run in runs:
+        achieved_at = (run.updated_at or run.created_at).date()
+        if start <= achieved_at < end:
+            filtered.append(run)
+    return filtered
+
+
+def _build_score_leaderboard_entries(runs: list[Run], db: Session) -> list[dict[str, Any]]:
+    best_by_user: dict[int, Run] = {}
+    for run in runs:
+        if run.user_id is None or run.score is None:
+            continue
+        current = best_by_user.get(run.user_id)
+        if current is None or (run.score, run.updated_at or run.created_at, run.id) > (
+            current.score or 0,
+            current.updated_at or current.created_at,
+            current.id,
+        ):
+            best_by_user[run.user_id] = run
+
+    ordered = sorted(
+        best_by_user.values(),
+        key=lambda run: (run.score or 0, run.updated_at or run.created_at, run.id),
+        reverse=True,
+    )
+    entries: list[dict[str, Any]] = []
+    for rank, run in enumerate(ordered, start=1):
+        user = db.get(User, run.user_id)
+        if user is None:
+            continue
+        entries.append(
+            {
+                "rank": rank,
+                "display_name_masked": _masked_identity(user),
+                "score": int(run.score or 0),
+                "run_id": run.id,
+                "achieved_at": (run.updated_at or run.created_at).isoformat(),
+                "user_id": run.user_id,
+            }
+        )
+    return entries
+
+
+def _build_achievement_leaderboard_entries(db: Session) -> list[dict[str, Any]]:
+    runs = list(db.execute(select(Run).where(Run.user_id.is_not(None))).scalars().all())
+    unlocked_by_user: dict[int, set[str]] = {}
+    last_seen_by_user: dict[int, datetime] = {}
+    for run in runs:
+        if run.user_id is None:
+            continue
+        unlocked_by_user.setdefault(run.user_id, set()).update(run.achievements or [])
+        last_seen_by_user[run.user_id] = max(last_seen_by_user.get(run.user_id, run.created_at), run.updated_at or run.created_at)
+
+    ordered_user_ids = sorted(
+        unlocked_by_user,
+        key=lambda user_id: (len(unlocked_by_user[user_id]), last_seen_by_user.get(user_id), user_id),
+        reverse=True,
+    )
+
+    entries: list[dict[str, Any]] = []
+    for rank, user_id in enumerate(ordered_user_ids, start=1):
+        user = db.get(User, user_id)
+        if user is None:
+            continue
+        entries.append(
+            {
+                "rank": rank,
+                "display_name_masked": _masked_identity(user),
+                "score": len(unlocked_by_user[user_id]),
+                "run_id": None,
+                "achieved_at": last_seen_by_user[user_id].isoformat() if user_id in last_seen_by_user else None,
+                "user_id": user_id,
+            }
+        )
+    return entries
+
+
+def build_leaderboard_payload(db: Session, board: str, page: int, actor: Actor) -> dict[str, Any]:
+    board = board.lower()
+    today = _today_utc()
+    period_start: date | None = None
+    period_end: date | None = None
+
+    if board == "weekly":
+        period_start, period_end = _week_bounds(today)
+        entries = _build_score_leaderboard_entries(_scoreboard_runs(db, start=period_start, end=period_end), db)
+    elif board == "monthly":
+        period_start, period_end = _month_bounds(today)
+        entries = _build_score_leaderboard_entries(_scoreboard_runs(db, start=period_start, end=period_end), db)
+    elif board == "achievements":
+        entries = _build_achievement_leaderboard_entries(db)
+    else:
+        raise HTTPException(status_code=404, detail="未找到对应排行榜。")
+
+    page_size = 20
+    total_entries = len(entries)
+    start_idx = max(page - 1, 0) * page_size
+    paged_entries = entries[start_idx : start_idx + page_size]
+
+    self_entry = None
+    if actor.is_user:
+        self_entry = next((entry for entry in entries if entry["user_id"] == actor.user_id), None)
+
+    for entry in entries:
+        entry.pop("user_id", None)
+    if self_entry is not None:
+        self_entry = dict(self_entry)
+        self_entry.pop("user_id", None)
+
+    return {
+        "board": board,
+        "page": page,
+        "page_size": page_size,
+        "total_entries": total_entries,
+        "period_start": period_start.isoformat() if period_start else None,
+        "period_end": period_end.isoformat() if period_end else None,
+        "entries": paged_entries,
+        "self_entry": self_entry,
     }
 
 
