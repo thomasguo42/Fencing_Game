@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from engine import GameEngine
-from engine.content import option_by_id
+from engine.content import collapse_ending_by_id, option_by_id, personality_by_id
 from engine.models import RunState
 from server.app.config import settings
 from server.app.models import DailyPlayQuota, Guest, Run, RunWeekLog, ShareInvite, ShareRedeem, User
@@ -277,6 +277,17 @@ def _consume_play_attempt_or_raise(db: Session, actor: Actor) -> dict[str, Any]:
     db.add(quota)
     db.flush()
     return _build_play_quota_payload(quota)
+
+
+def _personality_meta(personality_id: str | None) -> dict[str, Any] | None:
+    if not personality_id:
+        return None
+    personality = personality_by_id(content, personality_id)
+    return {
+        "id": personality.get("id"),
+        "name_cn": personality.get("name_cn"),
+        "copy_cn": personality.get("copy_cn"),
+    }
 
 
 def _grant_share_bonus(db: Session, actor_type: str, actor_key: str) -> bool:
@@ -587,6 +598,11 @@ def build_archive_payload(db: Session, actor: Actor) -> dict[str, Any]:
             "score": run.score,
             "grade_label": run.grade_label,
             "final_result": run.final_result,
+            "attributes_end": run.attributes if run.status != "collapsed" else None,
+            "personality_end_meta": _personality_meta(run.personality_end) if run.status != "collapsed" else None,
+            "collapse_ending_name_cn": collapse_ending_by_id(content, run.collapse_ending_id)["name_cn"]
+            if run.status == "collapsed" and run.collapse_ending_id
+            else None,
         }
         for run in runs
         if run.report is not None

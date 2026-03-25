@@ -169,6 +169,8 @@ def test_final_returns_outcome_and_report_payload(monkeypatch) -> None:
         assert "roll_int" not in result
         assert "applied_deltas" not in result
         assert "attributes" not in body["payload"]
+        assert body["payload"]["final_story_cn"]
+        assert "最后一剑" in body["payload"]["final_story_cn"]
         assert "report_payload" in body
         assert body["report_payload"]["screen"] == "report"
 
@@ -295,6 +297,77 @@ def test_collapse_screen_includes_personality_meta(monkeypatch) -> None:
 
         assert body["screen"] == "collapse"
         assert body["payload"]["personality_start_meta"]["name_cn"]
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_archive_history_records_include_report_summary_fields(monkeypatch) -> None:
+    win_seed = 8888
+    collapse_seed, collapse_choices = _collapse_seed_and_choices()
+    seeds = iter([win_seed, collapse_seed])
+    monkeypatch.setattr(service, "randbits", lambda _: next(seeds))
+    plan = _safe_week_choices(win_seed)
+
+    async def scenario(client: httpx.AsyncClient):
+        init = await client.post("/api/guest/init")
+        assert init.status_code == 200
+
+        win_create = await client.post("/api/runs")
+        assert win_create.status_code == 200
+        win_run_id = win_create.json()["run_id"]
+
+        allocated = await client.post(f"/api/runs/{win_run_id}/allocate", json={"attributes": _allocation()})
+        assert allocated.status_code == 200
+        ack = await client.post(f"/api/runs/{win_run_id}/personality/ack")
+        assert ack.status_code == 200
+        screen = ack.json()
+
+        for choice in plan:
+            picked = await client.post(f"/api/runs/{win_run_id}/choose", json={"option_id": choice})
+            assert picked.status_code == 200
+            screen = picked.json()
+            if screen["screen"] != "week":
+                break
+
+        assert screen["screen"] == "finals"
+        final = await client.post(f"/api/runs/{win_run_id}/final", json={"tactic_id": "w12_t06"})
+        assert final.status_code == 200
+
+        collapse_create = await client.post("/api/runs")
+        assert collapse_create.status_code == 200
+        collapse_run_id = collapse_create.json()["run_id"]
+
+        collapse_alloc = await client.post(f"/api/runs/{collapse_run_id}/allocate", json={"attributes": _collapse_allocation()})
+        assert collapse_alloc.status_code == 200
+        collapse_ack = await client.post(f"/api/runs/{collapse_run_id}/personality/ack")
+        assert collapse_ack.status_code == 200
+        body = collapse_ack.json()
+
+        for choice in collapse_choices:
+            collapsed = await client.post(f"/api/runs/{collapse_run_id}/choose", json={"option_id": choice})
+            assert collapsed.status_code == 200
+            body = collapsed.json()
+            if body["screen"] == "collapse":
+                break
+
+        assert body["screen"] == "collapse"
+        finish = await client.post(f"/api/runs/{collapse_run_id}/finish")
+        assert finish.status_code == 200
+
+        archive = await client.get("/api/archive")
+        assert archive.status_code == 200
+        history = archive.json()["history_records"]
+
+        win_record = next(item for item in history if item["run_id"] == win_run_id)
+        assert win_record["attributes_end"]["skill"] >= 0
+        assert win_record["personality_end_meta"]["name_cn"]
+        assert win_record["collapse_ending_name_cn"] is None
+
+        collapse_record = next(item for item in history if item["run_id"] == collapse_run_id)
+        assert collapse_record["status"] == "collapsed"
+        assert collapse_record["collapse_ending_name_cn"]
+        assert collapse_record["attributes_end"] is None
+        assert collapse_record["personality_end_meta"] is None
 
     asyncio.run(_with_api_client(scenario))
 

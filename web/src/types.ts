@@ -64,6 +64,13 @@ export type HistoryRecord = {
   score?: number | null;
   grade_label?: string | null;
   final_result?: string | null;
+  attributes_end?: Record<string, number> | null;
+  personality_end_meta?: {
+    id?: string | null;
+    name_cn?: string | null;
+    copy_cn?: { short?: string; long?: string } | null;
+  } | null;
+  collapse_ending_name_cn?: string | null;
 };
 
 export type AchievementCatalogItem = {

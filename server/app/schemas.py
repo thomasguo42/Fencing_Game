@@ -33,6 +33,12 @@ class UserProfileResponse(BaseModel):
     external_user_id: str | None
 
 
+class PersonalityMeta(BaseModel):
+    id: str | None = None
+    name_cn: str | None = None
+    copy_cn: dict[str, Any] | None = None
+
+
 class CreateRunResponse(BaseModel):
     run_id: str
     status: str
@@ -82,6 +88,9 @@ class HistoryRecord(BaseModel):
     score: int | None = None
     grade_label: str | None = None
     final_result: str | None = None
+    attributes_end: dict[str, int] | None = None
+    personality_end_meta: PersonalityMeta | None = None
+    collapse_ending_name_cn: str | None = None
 
 
 class AchievementRecord(BaseModel):

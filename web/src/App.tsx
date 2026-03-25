@@ -82,6 +82,11 @@ function formatDateTime(value: string): string {
   });
 }
 
+function formatAttributeSnapshot(attributes: Record<string, number> | null | undefined): string {
+  if (!attributes) return "";
+  return ATTRS.map((attr) => `${ATTR_CN[attr]} ${Number(attributes[attr] ?? 0)}`).join(" · ");
+}
+
 function buildStartScreen(): PublicScreen {
   return {
     run_id: "pending",
@@ -753,6 +758,20 @@ export default function App() {
                           {record.score ? ` · 积分 ${record.score}` : ""}
                           {record.grade_label ? ` · ${record.grade_label}` : ""}
                         </p>
+                        {record.status === "collapsed" ? (
+                          <p className="mt-1 font-body text-xs text-ink-700">
+                            崩坏结局：{record.collapse_ending_name_cn ?? "未记录"}
+                          </p>
+                        ) : (
+                          <>
+                            {record.personality_end_meta?.name_cn && (
+                              <p className="mt-1 font-body text-xs text-ink-700">终局人格：{record.personality_end_meta.name_cn}</p>
+                            )}
+                            {record.attributes_end && (
+                              <p className="mt-1 font-body text-[11px] text-ink-700/85">{formatAttributeSnapshot(record.attributes_end)}</p>
+                            )}
+                          </>
+                        )}
                       </button>
                     ))
                   )}
@@ -1072,10 +1091,18 @@ export default function App() {
             >
               {(() => {
                 const result = (screen.payload.result as Record<string, unknown>) ?? {};
+                const finalStory = String(screen.payload.final_story_cn ?? "").trim();
                 return (
                   <>
-                    <h2 className="font-heading text-2xl">决赛结果：{String(result.final_result ?? "")}</h2>
-                    <p className="mt-2 font-body text-sm text-ink-700">战术：{String(result.tactic_name_cn ?? "")}</p>
+                    {finalStory ? (
+                      <MarkdownText text={finalStory} className="font-body text-[15px]" />
+                    ) : (
+                      <p className="font-body text-sm text-ink-700">战术：{String(result.tactic_name_cn ?? "")}</p>
+                    )}
+                    <p className={`${finalStory ? "mt-4" : "mt-2"} font-body text-sm text-ink-700`}>
+                      战术：{String(result.tactic_name_cn ?? "")}
+                    </p>
+                    <p className="font-body text-sm text-ink-700">结果：{String(result.final_result ?? "")}</p>
                     <p className="font-body text-sm text-ink-700">达标：{String(result.requirements_met ? "是" : "否")}</p>
                     {result.final_tier_cn && <p className="font-body text-sm text-ink-700">胜利档位：{String(result.final_tier_cn)}</p>}
                   </>

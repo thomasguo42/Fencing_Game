@@ -164,6 +164,7 @@ def build_final_outcome_screen(content: ContentBundle, run_id: str, state: RunSt
                 "final_result": state.final_record.final_result,
                 "final_tier_cn": final_tier_cn,
             },
+            "final_story_cn": ((state.report or {}).get("report_sections") or {}).get("final_moment_cn"),
             "warning_attrs": state.warning_attrs,
         },
     }
