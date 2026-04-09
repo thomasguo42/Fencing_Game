@@ -1,6 +1,7 @@
 import type {
   ApiError,
   ArchiveResponse,
+  HistoryPageResponse,
   LeaderboardResponse,
   PlayQuota,
   PublicScreen,
@@ -63,6 +64,8 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   getArchive: () => request<ArchiveResponse>("/api/archive"),
+  getHistoryPage: (page = 1, pageSize = 10) =>
+    request<HistoryPageResponse>(`/api/archive/history?page=${page}&page_size=${pageSize}`),
   getPlayQuota: () => request<PlayQuota>("/api/play-quota"),
   createShareInvite: (runId?: string) =>
     request<ShareInvite>(`/api/share/invites${runId ? `?run_id=${encodeURIComponent(runId)}` : ""}`, { method: "POST" }),

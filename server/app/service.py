@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from secrets import randbits, token_urlsafe
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import qrcode
 from fastapi import HTTPException, Request, Response, status
@@ -32,6 +33,7 @@ from server.app.state_codec import apply_engine_state_to_run, run_to_engine_stat
 
 engine = GameEngine()
 content = engine.content
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class Actor:
@@ -174,18 +176,16 @@ def _today_utc() -> date:
     return datetime.now(UTC).date()
 
 
-def _week_bounds(today: date) -> tuple[date, date]:
-    start = today - timedelta(days=today.weekday())
+def _now_shanghai() -> datetime:
+    return datetime.now(SHANGHAI_TZ)
+
+
+def _week_bounds_shanghai(now: datetime) -> tuple[datetime, datetime]:
+    local_now = now.astimezone(SHANGHAI_TZ)
+    days_since_friday = (local_now.weekday() - 4) % 7
+    start_date = local_now.date() - timedelta(days=days_since_friday)
+    start = datetime.combine(start_date, datetime.min.time(), tzinfo=SHANGHAI_TZ)
     return start, start + timedelta(days=7)
-
-
-def _month_bounds(today: date) -> tuple[date, date]:
-    start = today.replace(day=1)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
-    return start, end
 
 
 def _mask_name(display_name: str | None) -> str:
@@ -287,6 +287,24 @@ def _personality_meta(personality_id: str | None) -> dict[str, Any] | None:
         "id": personality.get("id"),
         "name_cn": personality.get("name_cn"),
         "copy_cn": personality.get("copy_cn"),
+    }
+
+
+def _history_record_from_run(run: Run) -> dict[str, Any]:
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "week": run.week,
+        "played_at": (run.updated_at or run.created_at).isoformat(),
+        "score": run.score,
+        "grade_label": run.grade_label,
+        "final_result": run.final_result,
+        "attributes_end": run.attributes,
+        "personality_start_meta": _personality_meta(run.personality_start),
+        "personality_end_meta": _personality_meta(run.personality_end),
+        "collapse_ending_name_cn": collapse_ending_by_id(content, run.collapse_ending_id)["name_cn"]
+        if run.collapse_ending_id
+        else None,
     }
 
 
@@ -589,24 +607,7 @@ def build_archive_payload(db: Session, actor: Actor) -> dict[str, Any]:
                 }
             )
 
-    history_records = [
-        {
-            "run_id": run.id,
-            "status": run.status,
-            "week": run.week,
-            "played_at": (run.updated_at or run.created_at).isoformat(),
-            "score": run.score,
-            "grade_label": run.grade_label,
-            "final_result": run.final_result,
-            "attributes_end": run.attributes if run.status != "collapsed" else None,
-            "personality_end_meta": _personality_meta(run.personality_end) if run.status != "collapsed" else None,
-            "collapse_ending_name_cn": collapse_ending_by_id(content, run.collapse_ending_id)["name_cn"]
-            if run.status == "collapsed" and run.collapse_ending_id
-            else None,
-        }
-        for run in runs
-        if run.report is not None
-    ]
+    history_records = [_history_record_from_run(run) for run in runs if run.report is not None]
 
     return {
         "runs": [
@@ -626,6 +627,22 @@ def build_archive_payload(db: Session, actor: Actor) -> dict[str, Any]:
         "achievement_records": achievement_records,
         "achievement_catalog": achievement_catalog,
         "play_quota": get_play_quota_payload(db, actor),
+    }
+
+
+def build_history_page_payload(db: Session, actor: Actor, page: int, page_size: int) -> dict[str, Any]:
+    runs = [run for run in list_runs_for_actor(db, actor) if run.report is not None]
+    total = len(runs)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    start_idx = max(page - 1, 0) * page_size
+    end_idx = start_idx + page_size
+
+    return {
+        "items": [_history_record_from_run(run) for run in runs[start_idx:end_idx]],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
     }
 
 
@@ -713,8 +730,8 @@ def redeem_share_invite(db: Session, actor: Actor, invite_token: str) -> dict[st
 def _scoreboard_runs(
     db: Session,
     *,
-    start: date | None = None,
-    end: date | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> list[Run]:
     stmt = select(Run).where(Run.user_id.is_not(None), Run.score.is_not(None), Run.report.is_not(None))
     runs = list(db.execute(stmt).scalars().all())
@@ -723,7 +740,7 @@ def _scoreboard_runs(
 
     filtered: list[Run] = []
     for run in runs:
-        achieved_at = (run.updated_at or run.created_at).date()
+        achieved_at = (run.updated_at or run.created_at).astimezone(SHANGHAI_TZ)
         if start <= achieved_at < end:
             filtered.append(run)
     return filtered
@@ -801,16 +818,17 @@ def _build_achievement_leaderboard_entries(db: Session) -> list[dict[str, Any]]:
 
 def build_leaderboard_payload(db: Session, board: str, page: int, actor: Actor) -> dict[str, Any]:
     board = board.lower()
-    today = _today_utc()
+    now = _now_shanghai()
     period_start: date | None = None
     period_end: date | None = None
 
     if board == "weekly":
-        period_start, period_end = _week_bounds(today)
-        entries = _build_score_leaderboard_entries(_scoreboard_runs(db, start=period_start, end=period_end), db)
+        window_start, window_end = _week_bounds_shanghai(now)
+        period_start = window_start.date()
+        period_end = window_end.date()
+        entries = _build_score_leaderboard_entries(_scoreboard_runs(db, start=window_start, end=window_end), db)
     elif board == "monthly":
-        period_start, period_end = _month_bounds(today)
-        entries = _build_score_leaderboard_entries(_scoreboard_runs(db, start=period_start, end=period_end), db)
+        entries = _build_score_leaderboard_entries(_scoreboard_runs(db), db)
     elif board == "achievements":
         entries = _build_achievement_leaderboard_entries(db)
     else:

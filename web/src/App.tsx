@@ -6,7 +6,7 @@ import { ATTR_CN } from "./copy";
 import { EdgeWarnings } from "./components/EdgeWarnings";
 import { MarkdownText } from "./components/MarkdownText";
 import { RadarChart } from "./components/RadarChart";
-import type { ArchiveResponse, LeaderboardResponse, PublicScreen, ShareInvite, UserProfile } from "./types";
+import type { ArchiveResponse, HistoryPageResponse, LeaderboardResponse, PublicScreen, ShareInvite, UserProfile } from "./types";
 
 const ATTRS = ["stamina", "skill", "mind", "academics", "social", "finance"] as const;
 const ALLOC_TOTAL = 250;
@@ -115,6 +115,8 @@ export default function App() {
 
   const [sessionMode, setSessionMode] = useState<"guest" | "user">("guest");
   const [archive, setArchive] = useState<ArchiveResponse | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageData, setHistoryPageData] = useState<HistoryPageResponse | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [shareInvite, setShareInvite] = useState<ShareInvite | null>(null);
   const [leaderboardBoard, setLeaderboardBoard] = useState<"weekly" | "monthly" | "achievements">("weekly");
@@ -142,6 +144,11 @@ export default function App() {
   const refreshArchive = async () => {
     const next = await api.getArchive();
     setArchive(next);
+  };
+
+  const refreshHistoryPage = async (page = historyPage) => {
+    const next = await api.getHistoryPage(page, 10);
+    setHistoryPageData(next);
   };
 
   const refreshProfile = async () => {
@@ -202,6 +209,8 @@ export default function App() {
   const loadGuestContext = async () => {
     setSessionMode("guest");
     setProfile(null);
+    setHistoryPage(1);
+    setHistoryPageData(null);
     setProfileDisplayName("");
     setProfilePhoneNumber("");
     setProfileExternalUserId("");
@@ -218,14 +227,18 @@ export default function App() {
 
     applyCurrentScreen(current);
     await refreshArchive();
+    await refreshHistoryPage(1);
     await refreshLeaderboard();
     await redeemShareTokenFromUrl();
     await refreshArchive();
+    await refreshHistoryPage(1);
     await refreshLeaderboard();
   };
 
   const loadUserContext = async (preferredRunId?: string) => {
     setSessionMode("user");
+    setHistoryPage(1);
+    setHistoryPageData(null);
 
     let listing = await api.listRuns();
     let targetRunId = preferredRunId || listing.runs[0]?.run_id;
@@ -233,10 +246,12 @@ export default function App() {
     if (!targetRunId) {
       applyCurrentScreen(buildStartScreen());
       await refreshArchive();
+      await refreshHistoryPage(1);
       await refreshProfile();
       await refreshLeaderboard();
       await redeemShareTokenFromUrl();
       await refreshArchive();
+      await refreshHistoryPage(1);
       await refreshLeaderboard();
       return;
     }
@@ -244,10 +259,12 @@ export default function App() {
     const current = await api.getRun(targetRunId);
     applyCurrentScreen(current);
     await refreshArchive();
+    await refreshHistoryPage(1);
     await refreshProfile();
     await refreshLeaderboard();
     await redeemShareTokenFromUrl();
     await refreshArchive();
+    await refreshHistoryPage(1);
     await refreshLeaderboard();
   };
 
@@ -300,6 +317,11 @@ export default function App() {
     if (!screen) return;
     void refreshLeaderboard();
   }, [leaderboardBoard, leaderboardPage, screen]);
+
+  useEffect(() => {
+    if (!screen) return;
+    void refreshHistoryPage(historyPage);
+  }, [historyPage, screen]);
 
   const warningAttrs = getWarningAttrs(screen);
 
@@ -520,6 +542,8 @@ export default function App() {
       const next = await api.chooseFinal(screen.run_id, tacticId);
       applyCurrentScreen(next);
       await refreshArchive();
+      setHistoryPage(1);
+      await refreshHistoryPage(1);
       await refreshLeaderboard();
     } catch (e) {
       setError((e as Error).message);
@@ -541,6 +565,8 @@ export default function App() {
       const next = await api.finish(screen.run_id);
       applyCurrentScreen(next);
       await refreshArchive();
+      setHistoryPage(1);
+      await refreshHistoryPage(1);
       await refreshLeaderboard();
     } catch (e) {
       setError((e as Error).message);
@@ -595,6 +621,7 @@ export default function App() {
   const intro = (screen.payload.intro as Record<string, unknown>) ?? {};
   const opening = (intro.opening as Record<string, unknown>) ?? {};
   const openingLines = ((opening.voiceover_lines_cn ?? []) as string[]).slice(0, voiceLineIndex);
+  const historyRecords = historyPageData?.items ?? archive?.history_records ?? [];
 
   return (
     <div className="min-h-screen bg-parchment pb-10 text-ink-900">
@@ -740,10 +767,10 @@ export default function App() {
               <div className="rounded-2xl border border-ink-700/20 bg-ink-50/90 p-5 shadow-panel">
                 <h2 className="font-heading text-xl">历史报告</h2>
                 <div className="mt-3 max-h-60 space-y-2 overflow-auto pr-1">
-                  {archive.history_records.length === 0 ? (
+                  {historyRecords.length === 0 ? (
                     <p className="font-body text-sm text-ink-700">还没有可回看的结算报告。</p>
                   ) : (
-                    archive.history_records.map((record) => (
+                    historyRecords.map((record) => (
                       <button
                         key={record.run_id}
                         onClick={() => handleOpenRun(record.run_id)}
@@ -758,24 +785,45 @@ export default function App() {
                           {record.score ? ` · 积分 ${record.score}` : ""}
                           {record.grade_label ? ` · ${record.grade_label}` : ""}
                         </p>
-                        {record.status === "collapsed" ? (
-                          <p className="mt-1 font-body text-xs text-ink-700">
-                            崩坏结局：{record.collapse_ending_name_cn ?? "未记录"}
-                          </p>
-                        ) : (
-                          <>
-                            {record.personality_end_meta?.name_cn && (
-                              <p className="mt-1 font-body text-xs text-ink-700">终局人格：{record.personality_end_meta.name_cn}</p>
-                            )}
-                            {record.attributes_end && (
-                              <p className="mt-1 font-body text-[11px] text-ink-700/85">{formatAttributeSnapshot(record.attributes_end)}</p>
-                            )}
-                          </>
+                        {record.personality_start_meta?.name_cn && (
+                          <p className="mt-1 font-body text-xs text-ink-700">初型人格：{record.personality_start_meta.name_cn}</p>
+                        )}
+                        {record.personality_end_meta?.name_cn && (
+                          <p className="mt-1 font-body text-xs text-ink-700">终局人格：{record.personality_end_meta.name_cn}</p>
+                        )}
+                        {record.collapse_ending_name_cn && (
+                          <p className="mt-1 font-body text-xs text-ink-700">崩坏结局：{record.collapse_ending_name_cn}</p>
+                        )}
+                        {record.attributes_end && (
+                          <p className="mt-1 font-body text-[11px] text-ink-700/85">{formatAttributeSnapshot(record.attributes_end)}</p>
                         )}
                       </button>
                     ))
                   )}
                 </div>
+                {historyPageData && historyPageData.total > 0 && (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-body text-xs text-ink-700">
+                      第 {historyPageData.page} / {historyPageData.total_pages} 页 · 共 {historyPageData.total} 条
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                        disabled={historyPageData.page <= 1}
+                        className="rounded bg-white px-3 py-1 text-xs ring-1 ring-ink-700/20 disabled:opacity-40"
+                      >
+                        上一页
+                      </button>
+                      <button
+                        onClick={() => setHistoryPage((page) => Math.min(historyPageData.total_pages, page + 1))}
+                        disabled={historyPageData.page >= historyPageData.total_pages}
+                        className="rounded bg-white px-3 py-1 text-xs ring-1 ring-ink-700/20 disabled:opacity-40"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {archive.runs.some((run) => run.status === "in_progress") && (
                   <div className="mt-4 rounded-xl border border-ink-700/15 bg-white/65 p-3">
                     <p className="font-heading text-sm">进行中旅程</p>
@@ -837,7 +885,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   {([
                     ["weekly", "周榜"],
-                    ["monthly", "月榜"],
+                    ["monthly", "总榜"],
                     ["achievements", "成就解锁榜"]
                   ] as const).map(([board, label]) => (
                     <button

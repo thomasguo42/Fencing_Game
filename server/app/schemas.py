@@ -89,6 +89,7 @@ class HistoryRecord(BaseModel):
     grade_label: str | None = None
     final_result: str | None = None
     attributes_end: dict[str, int] | None = None
+    personality_start_meta: PersonalityMeta | None = None
     personality_end_meta: PersonalityMeta | None = None
     collapse_ending_name_cn: str | None = None
 
@@ -126,6 +127,14 @@ class ArchiveResponse(BaseModel):
     achievement_records: list[AchievementRecord]
     achievement_catalog: list[AchievementCatalogItem]
     play_quota: PlayQuotaResponse
+
+
+class HistoryPageResponse(BaseModel):
+    items: list[HistoryRecord]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 
 class ShareInviteResponse(BaseModel):

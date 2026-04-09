@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import httpx
+from sqlalchemy import select
 
 from engine import GameEngine
 from server.app.main import app
 from server.app import service
+from server.app.config import settings
+from server.app.db import SessionLocal
+from server.app.models import Run, User
+from server.app.security import hash_password
 
 
 def _allocation() -> dict[str, int]:
@@ -360,14 +366,92 @@ def test_archive_history_records_include_report_summary_fields(monkeypatch) -> N
 
         win_record = next(item for item in history if item["run_id"] == win_run_id)
         assert win_record["attributes_end"]["skill"] >= 0
+        assert win_record["personality_start_meta"]["name_cn"]
         assert win_record["personality_end_meta"]["name_cn"]
         assert win_record["collapse_ending_name_cn"] is None
 
         collapse_record = next(item for item in history if item["run_id"] == collapse_run_id)
         assert collapse_record["status"] == "collapsed"
         assert collapse_record["collapse_ending_name_cn"]
-        assert collapse_record["attributes_end"] is None
-        assert collapse_record["personality_end_meta"] is None
+        assert collapse_record["attributes_end"]["skill"] >= 0
+        assert collapse_record["personality_start_meta"]["name_cn"]
+        assert collapse_record["personality_end_meta"]["name_cn"]
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_history_page_endpoint_paginates_results() -> None:
+    username = f"history_user_{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    async def scenario(client: httpx.AsyncClient):
+        register = await client.post("/api/auth/register", json={"username": username, "password": "secret123"})
+        assert register.status_code == 200
+
+        login = await client.post("/api/auth/login", json={"username": username, "password": "secret123"})
+        assert login.status_code == 200
+
+        with SessionLocal() as db:
+            user = db.execute(select(User).where(User.username == username)).scalar_one()
+            for idx in range(12):
+                stamp = now - timedelta(minutes=idx)
+                run = Run(
+                    ruleset_version=settings.ruleset_version,
+                    seed=50_000 + idx,
+                    status="finished",
+                    week=12,
+                    owner_type="user",
+                    user_id=user.id,
+                    guest_id=None,
+                    is_active_guest_run=False,
+                    attributes={"stamina": 40 + idx, "skill": 35 + idx, "mind": 38 + idx, "academics": 45, "social": 42, "finance": 41},
+                    min_attributes={"stamina": 30, "skill": 30, "mind": 30, "academics": 30, "social": 30, "finance": 30},
+                    attributes_start={"stamina": 35, "skill": 30, "mind": 33, "academics": 40, "social": 37, "finance": 36},
+                    personality_start="white_paper",
+                    personality_end="white_paper",
+                    personality_reveal_ack=True,
+                    warning_attrs=[],
+                    final_tactic_id="w12_t06",
+                    final_requirements_met=True,
+                    final_win_rate=0.75,
+                    final_roll_int=77,
+                    final_result="胜利",
+                    final_tier="normal",
+                    final_applied_deltas={"skill": 2, "mind": 1},
+                    score=500 - idx,
+                    grade_id="G1",
+                    grade_label="稳定成长",
+                    achievements=["ach_core_01"],
+                    report={
+                        "report_sections": {
+                            "trajectory_summary_cn": "测试轨迹",
+                            "coach_note_cn": "测试教练评语",
+                            "teammate_note_cn": "测试队友评语",
+                            "final_moment_cn": "测试最后一剑",
+                        }
+                    },
+                    created_at=stamp,
+                    updated_at=stamp,
+                )
+                db.add(run)
+            db.commit()
+
+        first = await client.get("/api/archive/history?page=1&page_size=10")
+        assert first.status_code == 200
+        first_body = first.json()
+        assert first_body["page"] == 1
+        assert first_body["page_size"] == 10
+        assert first_body["total"] == 12
+        assert first_body["total_pages"] == 2
+        assert len(first_body["items"]) == 10
+        assert first_body["items"][0]["personality_start_meta"]["name_cn"]
+        assert first_body["items"][0]["attributes_end"]["skill"] >= 35
+
+        second = await client.get("/api/archive/history?page=2&page_size=10")
+        assert second.status_code == 200
+        second_body = second.json()
+        assert second_body["page"] == 2
+        assert len(second_body["items"]) == 2
 
     asyncio.run(_with_api_client(scenario))
 
@@ -417,6 +501,7 @@ def test_share_redeem_grants_bonus_to_inviter() -> None:
                 redeemed = await scanner.post(f"/api/share/invites/{token}/redeem")
                 assert redeemed.status_code == 200
                 assert redeemed.json()["granted_bonus"] is True
+                assert redeemed.json()["play_quota"]["bonus_earned"] == 0
 
             after = await owner.get("/api/archive")
             assert after.status_code == 200
@@ -479,12 +564,140 @@ def test_profile_and_leaderboard_flow(monkeypatch) -> None:
 
         leaderboard = await client.get("/api/leaderboards/weekly?page=1")
         assert leaderboard.status_code == 200
-        entries = leaderboard.json()["entries"]
+        leaderboard_body = leaderboard.json()
+        entries = leaderboard_body["entries"]
         assert entries
-        assert entries[0]["display_name_masked"].startswith("侯**134****5659")
+        assert leaderboard_body["self_entry"] is not None
+        assert leaderboard_body["self_entry"]["display_name_masked"].startswith("侯**134****5659")
 
         achievement_board = await client.get("/api/leaderboards/achievements?page=1")
         assert achievement_board.status_code == 200
         assert achievement_board.json()["self_entry"] is not None
+
+    asyncio.run(_with_api_client(scenario))
+
+
+def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) -> None:
+    reference_now = datetime(2026, 4, 17, 12, 0, tzinfo=service.SHANGHAI_TZ)
+    monkeypatch.setattr(service, "_now_shanghai", lambda: reference_now)
+    viewer_username = f"viewer_{uuid.uuid4().hex[:8]}"
+    old_username = f"old_board_{uuid.uuid4().hex[:8]}"
+    recent_username = f"recent_board_{uuid.uuid4().hex[:8]}"
+
+    async def scenario(client: httpx.AsyncClient):
+        register = await client.post("/api/auth/register", json={"username": viewer_username, "password": "secret123"})
+        assert register.status_code == 200
+
+        login = await client.post("/api/auth/login", json={"username": viewer_username, "password": "secret123"})
+        assert login.status_code == 200
+
+        with SessionLocal() as db:
+            old_user = User(
+                username=old_username,
+                password_hash=hash_password("secret123"),
+                display_name="旧榜用户",
+                phone_number="13900000001",
+                external_user_id=f"seed-{uuid.uuid4().hex[:10]}",
+            )
+            recent_user = User(
+                username=recent_username,
+                password_hash=hash_password("secret123"),
+                display_name="周榜用户",
+                phone_number="13900000002",
+                external_user_id=f"seed-{uuid.uuid4().hex[:10]}",
+            )
+            db.add(old_user)
+            db.add(recent_user)
+            db.flush()
+
+            old_stamp = datetime(2026, 4, 16, 23, 59, tzinfo=service.SHANGHAI_TZ).astimezone(UTC)
+            recent_stamp = datetime(2026, 4, 17, 0, 1, tzinfo=service.SHANGHAI_TZ).astimezone(UTC)
+
+            db.add(
+                Run(
+                    ruleset_version=settings.ruleset_version,
+                    seed=81_001,
+                    status="finished",
+                    week=12,
+                    owner_type="user",
+                    user_id=old_user.id,
+                    guest_id=None,
+                    is_active_guest_run=False,
+                    attributes={"stamina": 70, "skill": 80, "mind": 68, "academics": 60, "social": 55, "finance": 52},
+                    min_attributes={"stamina": 30, "skill": 30, "mind": 30, "academics": 30, "social": 30, "finance": 30},
+                    attributes_start={"stamina": 42, "skill": 46, "mind": 40, "academics": 40, "social": 41, "finance": 41},
+                    personality_start="white_paper",
+                    personality_end="white_paper",
+                    personality_reveal_ack=True,
+                    warning_attrs=[],
+                    final_tactic_id="w12_t06",
+                    final_requirements_met=True,
+                    final_win_rate=0.8,
+                    final_roll_int=90,
+                    final_result="胜利",
+                    final_tier="fancy",
+                    final_applied_deltas={"skill": 4, "mind": 2},
+                    score=1901,
+                    grade_id="G1",
+                    grade_label="榜首测试",
+                    achievements=["ach_core_01"],
+                    report={"report_sections": {"trajectory_summary_cn": "x", "coach_note_cn": "x", "teammate_note_cn": "x", "final_moment_cn": "x"}},
+                    created_at=old_stamp,
+                    updated_at=old_stamp,
+                )
+            )
+            db.add(
+                Run(
+                    ruleset_version=settings.ruleset_version,
+                    seed=81_002,
+                    status="finished",
+                    week=12,
+                    owner_type="user",
+                    user_id=recent_user.id,
+                    guest_id=None,
+                    is_active_guest_run=False,
+                    attributes={"stamina": 62, "skill": 65, "mind": 61, "academics": 58, "social": 54, "finance": 50},
+                    min_attributes={"stamina": 30, "skill": 30, "mind": 30, "academics": 30, "social": 30, "finance": 30},
+                    attributes_start={"stamina": 42, "skill": 46, "mind": 40, "academics": 40, "social": 41, "finance": 41},
+                    personality_start="white_paper",
+                    personality_end="white_paper",
+                    personality_reveal_ack=True,
+                    warning_attrs=[],
+                    final_tactic_id="w12_t06",
+                    final_requirements_met=True,
+                    final_win_rate=0.75,
+                    final_roll_int=82,
+                    final_result="胜利",
+                    final_tier="normal",
+                    final_applied_deltas={"skill": 3, "mind": 2},
+                    score=1702,
+                    grade_id="G1",
+                    grade_label="周榜测试",
+                    achievements=["ach_core_01"],
+                    report={"report_sections": {"trajectory_summary_cn": "x", "coach_note_cn": "x", "teammate_note_cn": "x", "final_moment_cn": "x"}},
+                    created_at=recent_stamp,
+                    updated_at=recent_stamp,
+                )
+            )
+            db.commit()
+
+        weekly = await client.get("/api/leaderboards/weekly?page=1")
+        assert weekly.status_code == 200
+        weekly_body = weekly.json()
+        assert weekly_body["period_start"] == "2026-04-17"
+        assert weekly_body["period_end"] == "2026-04-24"
+        weekly_scores = [entry["score"] for entry in weekly_body["entries"]]
+        assert 1702 in weekly_scores
+        assert 1901 not in weekly_scores
+
+        monthly = await client.get("/api/leaderboards/monthly?page=1")
+        assert monthly.status_code == 200
+        monthly_body = monthly.json()
+        assert monthly_body["period_start"] is None
+        assert monthly_body["period_end"] is None
+        monthly_scores = [entry["score"] for entry in monthly_body["entries"]]
+        assert 1901 in monthly_scores
+        assert 1702 in monthly_scores
+        assert monthly_scores.index(1901) < monthly_scores.index(1702)
 
     asyncio.run(_with_api_client(scenario))

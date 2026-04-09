@@ -15,6 +15,7 @@ from server.app.schemas import (
     ChooseRequest,
     CreateRunResponse,
     FinalRequest,
+    HistoryPageResponse,
     LeaderboardResponse,
     LoginRequest,
     MessageResponse,
@@ -33,6 +34,7 @@ from server.app.service import (
     ensure_guest,
     finish_run,
     build_archive_payload,
+    build_history_page_payload,
     build_leaderboard_payload,
     create_share_invite,
     get_active_guest_run,
@@ -205,6 +207,17 @@ def list_runs(request: Request, db: Session = Depends(get_db)) -> RunsListRespon
 def get_archive(request: Request, db: Session = Depends(get_db)) -> ArchiveResponse:
     actor = require_actor(request)
     return ArchiveResponse(**build_archive_payload(db, actor))
+
+
+@app.get("/api/archive/history", response_model=HistoryPageResponse)
+def get_archive_history(
+    request: Request,
+    db: Session = Depends(get_db),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=50),
+) -> HistoryPageResponse:
+    actor = require_actor(request)
+    return HistoryPageResponse(**build_history_page_payload(db, actor, page, page_size))
 
 
 @app.get("/api/play-quota")

@@ -65,12 +65,25 @@ export type HistoryRecord = {
   grade_label?: string | null;
   final_result?: string | null;
   attributes_end?: Record<string, number> | null;
+  personality_start_meta?: {
+    id?: string | null;
+    name_cn?: string | null;
+    copy_cn?: { short?: string; long?: string } | null;
+  } | null;
   personality_end_meta?: {
     id?: string | null;
     name_cn?: string | null;
     copy_cn?: { short?: string; long?: string } | null;
   } | null;
   collapse_ending_name_cn?: string | null;
+};
+
+export type HistoryPageResponse = {
+  items: HistoryRecord[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 };
 
 export type AchievementCatalogItem = {
