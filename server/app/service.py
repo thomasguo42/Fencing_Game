@@ -180,6 +180,16 @@ def _now_shanghai() -> datetime:
     return datetime.now(SHANGHAI_TZ)
 
 
+def _as_utc_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _run_timestamp(run: Run) -> datetime:
+    return _as_utc_aware(run.updated_at or run.created_at)
+
+
 def _week_bounds_shanghai(now: datetime) -> tuple[datetime, datetime]:
     local_now = now.astimezone(SHANGHAI_TZ)
     days_since_friday = (local_now.weekday() - 4) % 7
@@ -330,7 +340,7 @@ def _run_to_public(db: Session, run: Run) -> dict[str, Any]:
 
     if state.status == "collapsed":
         if state.report is not None:
-            return build_report_screen(content, run.id, state)
+            return _build_report_screen_for_run(db, run, state)
         return build_collapse_screen(content, run.id, state)
 
     if state.week == 0:
@@ -338,7 +348,7 @@ def _run_to_public(db: Session, run: Run) -> dict[str, Any]:
 
     if state.status == "finished":
         if state.report is not None:
-            return build_report_screen(content, run.id, state)
+            return _build_report_screen_for_run(db, run, state)
         return build_final_outcome_screen(content, run.id, state)
 
     if 1 <= state.week <= 11:
@@ -528,7 +538,7 @@ def resolve_final(db: Session, run: Run, tactic_id: str) -> dict[str, Any]:
     db.flush()
 
     payload = build_final_outcome_screen(content, run.id, final_state)
-    payload["report_payload"] = build_report_screen(content, run.id, final_state)
+    payload["report_payload"] = _build_report_screen_for_run(db, run, final_state)
     return payload
 
 
@@ -537,7 +547,7 @@ def finish_run(db: Session, run: Run) -> dict[str, Any]:
     state = run_to_engine_state(run, logs)
 
     if state.report is not None and state.score is not None:
-        return build_report_screen(content, run.id, state)
+        return _build_report_screen_for_run(db, run, state)
 
     if state.status not in {"finished", "collapsed"}:
         raise HTTPException(status_code=400, detail="当前状态尚不可生成报告")
@@ -546,7 +556,7 @@ def finish_run(db: Session, run: Run) -> dict[str, Any]:
     run = apply_engine_state_to_run(run, final_state)
     db.add(run)
     db.flush()
-    return build_report_screen(content, run.id, final_state)
+    return _build_report_screen_for_run(db, run, final_state)
 
 
 def list_runs_for_actor(db: Session, actor: Actor) -> list[Run]:
@@ -652,17 +662,28 @@ def create_share_invite(db: Session, actor: Actor, source_run_id: str | None = N
         if run.report is None:
             raise HTTPException(status_code=400, detail="仅已生成报告的旅程可创建分享。")
 
-    invite_token = token_urlsafe(24)
-    invite = ShareInvite(
-        invite_token=invite_token,
-        actor_type=actor.actor_type,
-        actor_key=actor.actor_key,
-        source_run_id=source_run_id,
-        page_path=settings.share_page_path,
-        redeem_count=0,
+    existing_stmt = (
+        select(ShareInvite)
+        .where(ShareInvite.actor_type == actor.actor_type, ShareInvite.actor_key == actor.actor_key)
+        .order_by(ShareInvite.created_at.asc(), ShareInvite.id.asc())
     )
-    db.add(invite)
-    db.flush()
+    invite = db.execute(existing_stmt).scalars().first()
+    if invite is None:
+        invite = ShareInvite(
+            invite_token=token_urlsafe(24),
+            actor_type=actor.actor_type,
+            actor_key=actor.actor_key,
+            source_run_id=source_run_id,
+            page_path=settings.share_page_path,
+            redeem_count=0,
+        )
+        db.add(invite)
+        db.flush()
+    elif source_run_id is not None and invite.source_run_id is None:
+        invite.source_run_id = source_run_id
+        invite.page_path = settings.share_page_path
+        db.add(invite)
+        db.flush()
 
     share_url = f"{settings.public_web_base_url}/?share_token={invite.invite_token}"
     qr_image = qrcode.make(share_url)
@@ -740,7 +761,7 @@ def _scoreboard_runs(
 
     filtered: list[Run] = []
     for run in runs:
-        achieved_at = (run.updated_at or run.created_at).astimezone(SHANGHAI_TZ)
+        achieved_at = _run_timestamp(run).astimezone(SHANGHAI_TZ)
         if start <= achieved_at < end:
             filtered.append(run)
     return filtered
@@ -752,17 +773,18 @@ def _build_score_leaderboard_entries(runs: list[Run], db: Session) -> list[dict[
         if run.user_id is None or run.score is None:
             continue
         current = best_by_user.get(run.user_id)
-        if current is None or (run.score, run.updated_at or run.created_at, run.id) > (
-            current.score or 0,
-            current.updated_at or current.created_at,
-            current.id,
+        achieved_at = _run_timestamp(run)
+        current_achieved_at = _run_timestamp(current) if current is not None else None
+        if (
+            current is None
+            or run.score > int(current.score or 0)
+            or (run.score == int(current.score or 0) and (achieved_at, run.id) < (current_achieved_at, current.id))
         ):
             best_by_user[run.user_id] = run
 
     ordered = sorted(
         best_by_user.values(),
-        key=lambda run: (run.score or 0, run.updated_at or run.created_at, run.id),
-        reverse=True,
+        key=lambda run: (-(run.score or 0), _run_timestamp(run), run.id),
     )
     entries: list[dict[str, Any]] = []
     for rank, run in enumerate(ordered, start=1):
@@ -775,7 +797,7 @@ def _build_score_leaderboard_entries(runs: list[Run], db: Session) -> list[dict[
                 "display_name_masked": _masked_identity(user),
                 "score": int(run.score or 0),
                 "run_id": run.id,
-                "achieved_at": (run.updated_at or run.created_at).isoformat(),
+                "achieved_at": _run_timestamp(run).isoformat(),
                 "user_id": run.user_id,
             }
         )
@@ -783,19 +805,25 @@ def _build_score_leaderboard_entries(runs: list[Run], db: Session) -> list[dict[
 
 
 def _build_achievement_leaderboard_entries(db: Session) -> list[dict[str, Any]]:
-    runs = list(db.execute(select(Run).where(Run.user_id.is_not(None))).scalars().all())
+    runs = sorted(
+        db.execute(select(Run).where(Run.user_id.is_not(None))).scalars().all(),
+        key=lambda run: (_run_timestamp(run), run.id),
+    )
     unlocked_by_user: dict[int, set[str]] = {}
-    last_seen_by_user: dict[int, datetime] = {}
+    completed_at_by_user: dict[int, datetime] = {}
     for run in runs:
         if run.user_id is None:
             continue
-        unlocked_by_user.setdefault(run.user_id, set()).update(run.achievements or [])
-        last_seen_by_user[run.user_id] = max(last_seen_by_user.get(run.user_id, run.created_at), run.updated_at or run.created_at)
+        unlocked = unlocked_by_user.setdefault(run.user_id, set())
+        previous_count = len(unlocked)
+        unlocked.update(run.achievements or [])
+        achieved_at = _run_timestamp(run)
+        if len(unlocked) > previous_count or run.user_id not in completed_at_by_user:
+            completed_at_by_user[run.user_id] = achieved_at
 
     ordered_user_ids = sorted(
         unlocked_by_user,
-        key=lambda user_id: (len(unlocked_by_user[user_id]), last_seen_by_user.get(user_id), user_id),
-        reverse=True,
+        key=lambda user_id: (-len(unlocked_by_user[user_id]), completed_at_by_user.get(user_id), user_id),
     )
 
     entries: list[dict[str, Any]] = []
@@ -809,11 +837,46 @@ def _build_achievement_leaderboard_entries(db: Session) -> list[dict[str, Any]]:
                 "display_name_masked": _masked_identity(user),
                 "score": len(unlocked_by_user[user_id]),
                 "run_id": None,
-                "achieved_at": last_seen_by_user[user_id].isoformat() if user_id in last_seen_by_user else None,
+                "achieved_at": completed_at_by_user[user_id].isoformat() if user_id in completed_at_by_user else None,
                 "user_id": user_id,
             }
         )
     return entries
+
+
+def _achievement_percentile_for_run(db: Session, run: Run) -> dict[str, int] | None:
+    if run.user_id is None:
+        return None
+
+    entries = _build_achievement_leaderboard_entries(db)
+    total = len(entries)
+    if total == 0:
+        return None
+
+    entry = next((item for item in entries if item.get("user_id") == run.user_id), None)
+    if entry is None:
+        return None
+
+    rank = int(entry["rank"])
+    if total == 1:
+        percentile = 100
+    else:
+        percentile = round((total - rank) * 100 / (total - 1))
+    return {"rank": rank, "total": total, "percentile": max(0, min(100, percentile))}
+
+
+def _build_report_screen_for_run(db: Session, run: Run, state: RunState) -> dict[str, Any]:
+    payload = build_report_screen(content, run.id, state)
+    report_payload = dict(payload["payload"])
+    achievement_percentile = _achievement_percentile_for_run(db, run)
+    if achievement_percentile is not None:
+        report_payload["achievement_percentile"] = achievement_percentile
+        report_payload["achievement_percentile_text"] = f"当前参赛者已经战胜{achievement_percentile['percentile']}%用户"
+    else:
+        report_payload["achievement_percentile"] = None
+        report_payload["achievement_percentile_text"] = None
+    payload["payload"] = report_payload
+    return payload
 
 
 def build_leaderboard_payload(db: Session, board: str, page: int, actor: Actor) -> dict[str, Any]:

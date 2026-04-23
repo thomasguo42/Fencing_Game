@@ -120,7 +120,7 @@ def build_report(content: ContentBundle, state: RunState) -> dict[str, Any]:
     )
 
     coach_note = templates["coach_note_cn"].format(
-        coach_open=COACH_OPEN[state.personality_start or "white_paper"],
+        coach_open=COACH_OPEN.get(state.personality_start or "", COACH_OPEN["white_paper"]),
         notable_growth=ATTR_CN[notable_growth_attr],
         risk_area=ATTR_CN[risk_attr],
         coach_motto=COACH_MOTTO[risk_attr],

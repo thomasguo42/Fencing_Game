@@ -7,7 +7,7 @@ from engine.achievements import evaluate_achievements
 from engine.constants import ATTRS, COLLAPSE_ENDING_ID, RULESET_VERSION
 from engine.content import ContentBundle, load_content, option_by_id, tactic_by_id, week_by_num
 from engine.models import CollapseRecord, FinalRecord, RunState, WeekHistoryRecord
-from engine.personality import classify_personality
+from engine.personality import classify_final_personality, classify_initial_personality
 from engine.report import build_report
 from engine.rng import deterministic_rng
 from engine.scoring import compute_score_and_grade
@@ -49,7 +49,7 @@ class GameEngine:
                 raise EngineError(f"{attr} must be in [{min_per_attr}, {max_per_attr}]")
 
         attrs = {a: int(attributes_initial[a]) for a in ATTRS}
-        personality_start = classify_personality(self.content, attrs)
+        personality_start = classify_initial_personality(self.content, attrs)
         presented = self.present_week(state.seed, week=1)
 
         return replace(
@@ -68,15 +68,17 @@ class GameEngine:
             raise EngineError("Week option presentation is only valid for weeks 1..11")
 
         week_data = week_by_num(self.content, week)
-        option_ids = [opt["id"] for opt in week_data["options"]]
-        rng = deterministic_rng(seed, RULESET_VERSION, week, "present")
+        options = week_data["options"]
+        original_ids = [opt["id"] for opt in options if opt.get("option_type") != "custom"]
+        custom_ids = [opt["id"] for opt in options if opt.get("option_type") == "custom"]
 
-        shuffled = list(option_ids)
-        for i in range(len(shuffled) - 1, 0, -1):
-            j = rng.randint(0, i)
-            shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+        if len(original_ids) >= 2 and len(custom_ids) >= 1:
+            selected = self._deterministic_sample(original_ids, seed, week, "present_original", 2)
+            selected += self._deterministic_sample(custom_ids, seed, week, "present_custom", 1)
+            return self._deterministic_sample(selected, seed, week, "present_mix", len(selected))
 
-        return shuffled[:3]
+        option_ids = [opt["id"] for opt in options]
+        return self._deterministic_sample(option_ids, seed, week, "present", 3)
 
     def apply_choice(
         self,
@@ -124,7 +126,7 @@ class GameEngine:
                 attr=collapse_attr,
                 ending_id=COLLAPSE_ENDING_ID[collapse_attr],
             )
-            personality_end = classify_personality(self.content, new_attrs)
+            personality_end = classify_final_personality(self.content, new_attrs)
             return replace(
                 state,
                 attributes=new_attrs,
@@ -203,7 +205,7 @@ class GameEngine:
             applied_deltas=applied,
         )
 
-        personality_end = classify_personality(self.content, new_attrs)
+        personality_end = classify_final_personality(self.content, new_attrs)
 
         return replace(
             state,
@@ -281,6 +283,14 @@ class GameEngine:
             raise EngineError(f"Unsupported delta format for {attr}: {raw}")
 
         return applied, rolls
+
+    def _deterministic_sample(self, option_ids: list[str], seed: int, week: int, namespace: str, count: int) -> list[str]:
+        rng = deterministic_rng(seed, RULESET_VERSION, week, namespace)
+        shuffled = list(option_ids)
+        for i in range(len(shuffled) - 1, 0, -1):
+            j = rng.randint(0, i)
+            shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+        return shuffled[:count]
 
     def _apply_attr_deltas(self, attrs: dict[str, int], deltas: dict[str, int]) -> dict[str, int]:
         clamp_min = int(self.content.rules["clamp"]["min"])

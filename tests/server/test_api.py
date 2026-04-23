@@ -489,6 +489,9 @@ def test_share_redeem_grants_bonus_to_inviter() -> None:
             invite = await owner.post("/api/share/invites")
             assert invite.status_code == 200
             token = invite.json()["invite_token"]
+            duplicate_invite = await owner.post("/api/share/invites")
+            assert duplicate_invite.status_code == 200
+            assert duplicate_invite.json()["invite_token"] == token
 
             before = await owner.get("/api/archive")
             assert before.status_code == 200
@@ -555,6 +558,8 @@ def test_profile_and_leaderboard_flow(monkeypatch) -> None:
         assert screen["screen"] == "finals"
         final = await client.post(f"/api/runs/{run_id}/final", json={"tactic_id": "w12_t06"})
         assert final.status_code == 200
+        report_payload = final.json()["report_payload"]["payload"]
+        assert report_payload["achievement_percentile_text"].startswith("当前参赛者已经战胜")
 
         archive = await client.get("/api/archive")
         assert archive.status_code == 200
@@ -583,6 +588,9 @@ def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) 
     viewer_username = f"viewer_{uuid.uuid4().hex[:8]}"
     old_username = f"old_board_{uuid.uuid4().hex[:8]}"
     recent_username = f"recent_board_{uuid.uuid4().hex[:8]}"
+    early_tie_username = f"early_tie_{uuid.uuid4().hex[:8]}"
+    late_tie_username = f"late_tie_{uuid.uuid4().hex[:8]}"
+    achievement_tie_ids = [f"ach_tie_{idx}" for idx in range(30)]
 
     async def scenario(client: httpx.AsyncClient):
         register = await client.post("/api/auth/register", json={"username": viewer_username, "password": "secret123"})
@@ -606,12 +614,30 @@ def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) 
                 phone_number="13900000002",
                 external_user_id=f"seed-{uuid.uuid4().hex[:10]}",
             )
+            early_tie_user = User(
+                username=early_tie_username,
+                password_hash=hash_password("secret123"),
+                display_name="早平分",
+                phone_number="13900000003",
+                external_user_id=f"seed-{uuid.uuid4().hex[:10]}",
+            )
+            late_tie_user = User(
+                username=late_tie_username,
+                password_hash=hash_password("secret123"),
+                display_name="晚平分",
+                phone_number="13900000004",
+                external_user_id=f"seed-{uuid.uuid4().hex[:10]}",
+            )
             db.add(old_user)
             db.add(recent_user)
+            db.add(early_tie_user)
+            db.add(late_tie_user)
             db.flush()
 
             old_stamp = datetime(2026, 4, 16, 23, 59, tzinfo=service.SHANGHAI_TZ).astimezone(UTC)
             recent_stamp = datetime(2026, 4, 17, 0, 1, tzinfo=service.SHANGHAI_TZ).astimezone(UTC)
+            early_tie_stamp = datetime(2026, 4, 17, 0, 2, tzinfo=service.SHANGHAI_TZ).astimezone(UTC)
+            late_tie_stamp = datetime(2026, 4, 17, 0, 3, tzinfo=service.SHANGHAI_TZ).astimezone(UTC)
 
             db.add(
                 Run(
@@ -640,7 +666,7 @@ def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) 
                     score=1901,
                     grade_id="G1",
                     grade_label="榜首测试",
-                    achievements=["ach_core_01"],
+                    achievements=achievement_tie_ids,
                     report={"report_sections": {"trajectory_summary_cn": "x", "coach_note_cn": "x", "teammate_note_cn": "x", "final_moment_cn": "x"}},
                     created_at=old_stamp,
                     updated_at=old_stamp,
@@ -673,12 +699,46 @@ def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) 
                     score=1702,
                     grade_id="G1",
                     grade_label="周榜测试",
-                    achievements=["ach_core_01"],
+                    achievements=achievement_tie_ids,
                     report={"report_sections": {"trajectory_summary_cn": "x", "coach_note_cn": "x", "teammate_note_cn": "x", "final_moment_cn": "x"}},
                     created_at=recent_stamp,
                     updated_at=recent_stamp,
                 )
             )
+            for user, stamp in ((early_tie_user, early_tie_stamp), (late_tie_user, late_tie_stamp)):
+                db.add(
+                    Run(
+                        ruleset_version=settings.ruleset_version,
+                        seed=81_003 + user.id,
+                        status="finished",
+                        week=12,
+                        owner_type="user",
+                        user_id=user.id,
+                        guest_id=None,
+                        is_active_guest_run=False,
+                        attributes={"stamina": 62, "skill": 65, "mind": 61, "academics": 58, "social": 54, "finance": 50},
+                        min_attributes={"stamina": 30, "skill": 30, "mind": 30, "academics": 30, "social": 30, "finance": 30},
+                        attributes_start={"stamina": 42, "skill": 46, "mind": 40, "academics": 40, "social": 41, "finance": 41},
+                        personality_start="white_paper",
+                        personality_end="white_paper",
+                        personality_reveal_ack=True,
+                        warning_attrs=[],
+                        final_tactic_id="w12_t06",
+                        final_requirements_met=True,
+                        final_win_rate=0.75,
+                        final_roll_int=82,
+                        final_result="胜利",
+                        final_tier="normal",
+                        final_applied_deltas={"skill": 3, "mind": 2},
+                        score=1800,
+                        grade_id="G1",
+                        grade_label="平分测试",
+                        achievements=["ach_core_01"],
+                        report={"report_sections": {"trajectory_summary_cn": "x", "coach_note_cn": "x", "teammate_note_cn": "x", "final_moment_cn": "x"}},
+                        created_at=stamp,
+                        updated_at=stamp,
+                    )
+                )
             db.commit()
 
         weekly = await client.get("/api/leaderboards/weekly?page=1")
@@ -689,6 +749,10 @@ def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) 
         weekly_scores = [entry["score"] for entry in weekly_body["entries"]]
         assert 1702 in weekly_scores
         assert 1901 not in weekly_scores
+        weekly_names = [entry["display_name_masked"] for entry in weekly_body["entries"]]
+        early_tie_idx = next(i for i, name in enumerate(weekly_names) if name.startswith("早**"))
+        late_tie_idx = next(i for i, name in enumerate(weekly_names) if name.startswith("晚**"))
+        assert early_tie_idx < late_tie_idx
 
         monthly = await client.get("/api/leaderboards/monthly?page=1")
         assert monthly.status_code == 200
@@ -699,5 +763,12 @@ def test_leaderboard_uses_friday_beijing_week_and_monthly_is_total(monkeypatch) 
         assert 1901 in monthly_scores
         assert 1702 in monthly_scores
         assert monthly_scores.index(1901) < monthly_scores.index(1702)
+
+        achievement_board = await client.get("/api/leaderboards/achievements?page=1")
+        assert achievement_board.status_code == 200
+        achievement_names = [entry["display_name_masked"] for entry in achievement_board.json()["entries"]]
+        old_idx = next(i for i, name in enumerate(achievement_names) if name.startswith("旧**"))
+        recent_idx = next(i for i, name in enumerate(achievement_names) if name.startswith("周**"))
+        assert old_idx < recent_idx
 
     asyncio.run(_with_api_client(scenario))

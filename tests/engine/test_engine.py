@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 
 import pytest
 
@@ -87,6 +88,57 @@ def test_choice_must_be_presented() -> None:
         engine.apply_choice(state, "w01_o99")
 
 
+def test_initial_personality_uses_highest_attr_and_tie_priority() -> None:
+    engine = GameEngine()
+    state = engine.new_run_state(seed=10)
+
+    allocated = engine.allocate(
+        state,
+        {
+            "stamina": 25,
+            "skill": 55,
+            "mind": 55,
+            "academics": 40,
+            "social": 35,
+            "finance": 40,
+        },
+    )
+
+    assert allocated.personality_start == "init_foxi_fafeng"
+
+
+def test_final_personality_uses_highest_and_lowest_attrs() -> None:
+    engine = GameEngine()
+    state = engine.new_run_state(seed=11)
+    state = engine.allocate(
+        state,
+        {
+            "stamina": 45,
+            "skill": 60,
+            "mind": 40,
+            "academics": 40,
+            "social": 40,
+            "finance": 25,
+        },
+    )
+
+    state = engine.resolve_final(replace(state, week=12), "w12_t01")
+
+    assert state.personality_end == "final_jingzhun_xigou"
+
+
+def test_present_week_picks_two_original_and_one_custom() -> None:
+    engine = GameEngine()
+
+    for week in range(1, 12):
+        presented = engine.present_week(seed=20260423, week=week)
+        options = {opt["id"]: opt for opt in engine.content.weeks["weeks"][week - 1]["options"]}
+
+        assert len(presented) == 3
+        assert sum(1 for option_id in presented if options[option_id]["option_type"] == "original") == 2
+        assert sum(1 for option_id in presented if options[option_id]["option_type"] == "custom") == 1
+
+
 def test_clamp_and_immediate_collapse() -> None:
     engine = GameEngine()
     state = engine.new_run_state(seed=22)
@@ -122,23 +174,26 @@ def test_golden_seed_123456() -> None:
     engine = GameEngine()
     state, first_presented, weekly_choices = _play_default_path(engine, seed=123456)
 
-    assert first_presented == ["w01_o06", "w01_o01", "w01_o05"]
-    assert weekly_choices[0] == (1, ("w01_o06", "w01_o01", "w01_o05"), "w01_o06")
-    assert state.final_record is None
+    assert first_presented == ["w01_o03", "w01_o02", "w01_o06"]
+    assert weekly_choices[0] == (1, ("w01_o03", "w01_o02", "w01_o06"), "w01_o03")
+    assert state.final_record is not None
     assert state.report is not None
-    assert state.score == 301
+    assert state.score == 348
     assert state.grade_id == "D"
     assert state.grade_label == "懵懂摸索"
     assert state.attributes == {
-        "stamina": 5,
-        "skill": 61,
-        "mind": 24,
-        "academics": 50,
-        "social": 54,
-        "finance": 55,
+        "stamina": 38,
+        "skill": 34,
+        "mind": 41,
+        "academics": 53,
+        "social": 33,
+        "finance": 36,
     }
     assert state.achievements == [
+        "ach_core_01",
+        "ach_core_02",
         "ach_special_02",
+        "ach_special_04",
         "ach_special_06",
     ]
 

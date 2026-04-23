@@ -20,6 +20,12 @@ RISK_LESSON = {
 }
 
 COACH_OPEN = {
+    "init_foxi_fafeng": "你表面稳住了局面，也要学会给心里的风暴留出口。",
+    "init_zhaoshi_fuduji": "你很会复刻动作，下一步是把别人的招式练成自己的判断。",
+    "init_jin_meichu": "你的精力很足，别只靠蛮劲，把力气用在有效的节奏里。",
+    "init_kongxiang_zuiqiang": "你脑内战术很多，真正的突破要靠身体把它们兑现出来。",
+    "init_renqun_nianren": "你擅长从人群里获得能量，但关键一剑仍然要自己递出去。",
+    "init_wanwu_suanzhang": "你会计算成本，这份清醒要服务热爱，而不是替热爱刹车。",
     "mirror": "你很快学会了“形”，但真正的答案在“里”。",
     "flint": "你的火很旺，学会让它照亮，而不是烧伤。",
     "analysis": "你的思考锋利，别忘了让身体也参与回答。",

@@ -1,76 +1,52 @@
 from __future__ import annotations
 
-from collections import Counter
-
 from engine.constants import ATTRS
 from engine.content import ContentBundle
 
 
-def _all_between(attrs: dict[str, int], low: int, high: int) -> bool:
-    return all(low <= attrs[a] <= high for a in ATTRS)
+INITIAL_HIGH_PRIORITY = ("mind", "skill", "stamina", "academics", "social", "finance")
+FINAL_LOW_PRIORITY = tuple(reversed(INITIAL_HIGH_PRIORITY))
 
 
-def _lead_over_second(attrs: dict[str, int], target_attr: str, gap: int) -> bool:
-    sorted_items = sorted(attrs.items(), key=lambda kv: kv[1], reverse=True)
-    if not sorted_items or sorted_items[0][0] != target_attr:
-        return False
-    second = sorted_items[1][1] if len(sorted_items) > 1 else sorted_items[0][1]
-    return attrs[target_attr] - second >= gap
+def _ordered_extreme(attrs: dict[str, int], order: tuple[str, ...], *, highest: bool) -> str:
+    attr_set = set(ATTRS)
+    values = {attr: int(attrs[attr]) for attr in ATTRS if attr in attrs}
+    if set(values) != attr_set:
+        missing = ", ".join(sorted(attr_set - set(values)))
+        raise ValueError(f"Personality classification missing attrs: {missing}")
+
+    target = max(values.values()) if highest else min(values.values())
+    for attr in order:
+        if values[attr] == target:
+            return attr
+    raise ValueError("Unable to resolve personality attribute")
 
 
-def _at_least_two_pairs_ge55_le35(attrs: dict[str, int]) -> bool:
-    counts = Counter()
-    for value in attrs.values():
-        if value >= 55:
-            counts["high"] += 1
-        if value <= 35:
-            counts["low"] += 1
-    return counts["high"] >= 2 and counts["low"] >= 2
+def classify_initial_personality(content: ContentBundle, attrs: dict[str, int]) -> str:
+    """Classify the allocation persona by highest attr with the required tie order."""
+    attr = _ordered_extreme(attrs, INITIAL_HIGH_PRIORITY, highest=True)
+    attr_map = content.personality.get("initial_attr_map", {})
+    pid = attr_map.get(attr)
+    if not isinstance(pid, str) or not pid:
+        raise ValueError(f"Missing initial personality mapping for attr: {attr}")
+    return pid
 
 
-def _matches_conditions(attrs: dict[str, int], conditions: dict[str, object]) -> bool:
-    for key, value in conditions.items():
-        if key == "all_between_inclusive":
-            low = int(value["min"])
-            high = int(value["max"])
-            if not _all_between(attrs, low, high):
-                return False
-        elif key == "lead_over_second_gte":
-            if not _lead_over_second(attrs, "skill", int(value)):
-                return False
-        elif key.endswith("_gte") and key.split("_gte")[0] in ATTRS:
-            attr = key.split("_gte")[0]
-            if attrs[attr] < int(value):
-                return False
-        elif key == "either_skill_or_mind_gte":
-            n = int(value)
-            if attrs["skill"] < n and attrs["mind"] < n:
-                return False
-        elif key == "the_other_lte":
-            n = int(value)
-            if attrs["skill"] >= attrs["mind"]:
-                if attrs["mind"] > n:
-                    return False
-            else:
-                if attrs["skill"] > n:
-                    return False
-        elif key == "at_least_two_pairs_ge55_le35":
-            if bool(value) and not _at_least_two_pairs_ge55_le35(attrs):
-                return False
-        else:
-            raise ValueError(f"Unsupported personality condition key: {key}")
-    return True
+def classify_final_personality(content: ContentBundle, attrs: dict[str, int]) -> str:
+    """Classify the report persona by highest and lowest ending attrs.
+
+    The document defines the high-attribute priority. It does not define low-attr
+    ties, so we keep them deterministic by using the reverse high priority.
+    """
+    high = _ordered_extreme(attrs, INITIAL_HIGH_PRIORITY, highest=True)
+    low = _ordered_extreme(attrs, FINAL_LOW_PRIORITY, highest=False)
+    rules = content.personality.get("final_rules", {})
+    attr_rules = rules.get(high, {})
+    pid = attr_rules.get(low)
+    if not isinstance(pid, str) or not pid:
+        raise ValueError(f"Missing final personality mapping for high={high}, low={low}")
+    return pid
 
 
 def classify_personality(content: ContentBundle, attrs: dict[str, int]) -> str:
-    types_by_id = {t["id"]: t for t in content.personality["types"]}
-    default_id = next(t["id"] for t in content.personality["types"] if t.get("is_default") is True)
-
-    for pid in content.personality["priority_order"]:
-        if pid == default_id:
-            continue
-        entry = types_by_id[pid]
-        if _matches_conditions(attrs, entry.get("conditions", {})):
-            return pid
-
-    return default_id
+    return classify_initial_personality(content, attrs)

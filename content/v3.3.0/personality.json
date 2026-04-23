@@ -1,16 +1,375 @@
 {
   "ruleset_version": "v3.3.0",
+  "initial_attr_priority": [
+    "mind",
+    "skill",
+    "stamina",
+    "academics",
+    "social",
+    "finance"
+  ],
+  "initial_attr_map": {
+    "mind": "init_foxi_fafeng",
+    "skill": "init_zhaoshi_fuduji",
+    "stamina": "init_jin_meichu",
+    "academics": "init_kongxiang_zuiqiang",
+    "social": "init_renqun_nianren",
+    "finance": "init_wanwu_suanzhang"
+  },
+  "final_low_attr_tie_priority": [
+    "finance",
+    "social",
+    "academics",
+    "stamina",
+    "skill",
+    "mind"
+  ],
+  "final_rules": {
+    "skill": {
+      "stamina": "final_jingzhun_xigou",
+      "finance": "final_jingzhun_xigou",
+      "mind": "final_aojiao_zhamiao",
+      "academics": "final_aojiao_zhamiao",
+      "social": "final_shengren_wujin",
+      "skill": "final_aojiao_zhamiao"
+    },
+    "stamina": {
+      "skill": "final_sizhi_fada",
+      "finance": "final_sizhi_fada",
+      "mind": "final_gupi_mengren",
+      "social": "final_gupi_mengren",
+      "academics": "final_gupi_mengren",
+      "stamina": "final_gupi_mengren"
+    },
+    "mind": {
+      "skill": "final_songchi_feichai",
+      "stamina": "final_songchi_feichai",
+      "social": "final_gaoqingshang_guairen",
+      "academics": "final_gaoqingshang_guairen",
+      "finance": "final_gaoqingshang_guairen",
+      "mind": "final_gaoqingshang_guairen"
+    },
+    "social": {
+      "skill": "final_sheniu_tangping",
+      "stamina": "final_sheniu_tangping",
+      "mind": "final_ruanmeng_weiqu",
+      "academics": "final_ruanmeng_weiqu",
+      "finance": "final_ruanmeng_weiqu",
+      "social": "final_ruanmeng_weiqu"
+    },
+    "academics": {
+      "skill": "final_nengwen_bunengwu",
+      "finance": "final_nengwen_bunengwu",
+      "stamina": "final_naoli_ruoji",
+      "mind": "final_naoli_ruoji",
+      "social": "final_gudu_wenquxing",
+      "academics": "final_naoli_ruoji"
+    },
+    "finance": {
+      "skill": "final_koumen_jiling",
+      "stamina": "final_koumen_jiling",
+      "mind": "final_caimi_xiaoqi",
+      "academics": "final_caimi_xiaoqi",
+      "social": "final_jingming_duxing",
+      "finance": "final_caimi_xiaoqi"
+    }
+  },
   "priority_order": [
+    "init_foxi_fafeng",
+    "init_zhaoshi_fuduji",
+    "init_jin_meichu",
+    "init_kongxiang_zuiqiang",
+    "init_renqun_nianren",
+    "init_wanwu_suanzhang",
+    "final_jingzhun_xigou",
+    "final_aojiao_zhamiao",
+    "final_shengren_wujin",
+    "final_sizhi_fada",
+    "final_gupi_mengren",
+    "final_songchi_feichai",
+    "final_gaoqingshang_guairen",
+    "final_sheniu_tangping",
+    "final_ruanmeng_weiqu",
+    "final_nengwen_bunengwu",
+    "final_naoli_ruoji",
+    "final_gudu_wenquxing",
+    "final_koumen_jiling",
+    "final_caimi_xiaoqi",
+    "final_jingming_duxing",
+    "white_paper",
     "mirror",
     "flint",
     "analysis",
     "network",
     "planner",
     "flash_flow",
-    "contrast",
-    "white_paper"
+    "contrast"
   ],
   "types": [
+    {
+      "id": "init_foxi_fafeng",
+      "kind": "initial",
+      "name_cn": "佛系发疯哥",
+      "copy_cn": {
+        "short": "佛系发疯哥",
+        "long": "表面稳得一批，天塌下来都面无表情，其实脑子里已经循环发疯八百遍了，情绪系统故障，平静全靠硬憋，疯全在心里。"
+      }
+    },
+    {
+      "id": "init_zhaoshi_fuduji",
+      "kind": "initial",
+      "name_cn": "招式复读机",
+      "copy_cn": {
+        "short": "招式复读机",
+        "long": "世间剑招通通照搬，别人练啥我学啥，自己完全没原创脑子，天生模仿上瘾，主打一个万物复刻，本人毫无主见。"
+      }
+    },
+    {
+      "id": "init_jin_meichu",
+      "kind": "initial",
+      "name_cn": "浑身劲没处使",
+      "copy_cn": {
+        "short": "浑身劲没处使",
+        "long": "精力旺盛到离谱，根本闲不下来，浑身蛮力无处宣泄，疯狂挥剑暴走，多动症晚期，一停下就浑身难受发疯。"
+      }
+    },
+    {
+      "id": "init_kongxiang_zuiqiang",
+      "kind": "initial",
+      "name_cn": "空想嘴强王者",
+      "copy_cn": {
+        "short": "空想嘴强王者",
+        "long": "脑子里战术多到爆炸，千种打法无限脑补，想得天花乱坠，身体一动不动，脑子战神，手部废物，光想不练第一名。"
+      }
+    },
+    {
+      "id": "init_renqun_nianren",
+      "kind": "initial",
+      "name_cn": "人群粘人精",
+      "copy_cn": {
+        "short": "人群粘人精",
+        "long": "离了别人就浑身不得劲，极度依赖热闹和旁人，独处直接精神空虚，天生爱凑堆，没朋友浑身难受综合症。"
+      }
+    },
+    {
+      "id": "init_wanwu_suanzhang",
+      "kind": "initial",
+      "name_cn": "万物算账大师",
+      "copy_cn": {
+        "short": "万物算账大师",
+        "long": "做啥事都先算亏不亏，练剑都计较性价比，世间万物皆可换算盈亏，抠门魔怔人，冲动是什么，本人从未拥有。"
+      }
+    },
+    {
+      "id": "final_jingzhun_xigou",
+      "kind": "final",
+      "name_cn": "精准细狗",
+      "copy_cn": {
+        "short": "奥运佩剑少了你，赛事直接少一半看点",
+        "long": "奥运佩剑少了你，赛事直接少一半看点\n剑尖锁头挂，我全身和钱包脆成妙脆角\n14:14？看我单灯带走",
+        "lines_cn": [
+          "奥运佩剑少了你，赛事直接少一半看点",
+          "剑尖锁头挂，我全身和钱包脆成妙脆角",
+          "14:14？看我单灯带走"
+        ]
+      }
+    },
+    {
+      "id": "final_aojiao_zhamiao",
+      "kind": "final",
+      "name_cn": "傲娇炸毛怪",
+      "copy_cn": {
+        "short": "击剑世界杯没你，我干脆直接关掉直播",
+        "long": "击剑世界杯没你，我干脆直接关掉直播\n手速碾压肝帝，脑和心态炸成烟花\n心态崩了？单灯照赢不误",
+        "lines_cn": [
+          "击剑世界杯没你，我干脆直接关掉直播",
+          "手速碾压肝帝，脑和心态炸成烟花",
+          "心态崩了？单灯照赢不误"
+        ]
+      }
+    },
+    {
+      "id": "final_shengren_wujin",
+      "kind": "final",
+      "name_cn": "生人勿近",
+      "copy_cn": {
+        "short": "剑道单挑天花板，不参赛纯属剑道损失",
+        "long": "剑道单挑天花板，不参赛纯属剑道损失\ni人隐身膜一开，十里活人绕道\nFIE认证：独狼，勿扰",
+        "lines_cn": [
+          "剑道单挑天花板，不参赛纯属剑道损失",
+          "i人隐身膜一开，十里活人绕道",
+          "FIE认证：独狼，勿扰"
+        ]
+      }
+    },
+    {
+      "id": "final_sizhi_fada",
+      "kind": "final",
+      "name_cn": "四肢发达崽",
+      "copy_cn": {
+        "short": "耐力怪物级体质，国家队抢着要的水平",
+        "long": "耐力怪物级体质，国家队抢着要的水平\n脑子纯肌肉，装备垃圾桶捡的\n弓步？不存在的，直接撞",
+        "lines_cn": [
+          "耐力怪物级体质，国家队抢着要的水平",
+          "脑子纯肌肉，装备垃圾桶捡的",
+          "弓步？不存在的，直接撞"
+        ]
+      }
+    },
+    {
+      "id": "final_gupi_mengren",
+      "kind": "final",
+      "name_cn": "孤僻猛人",
+      "copy_cn": {
+        "short": "体能离谱非人类，职业赛场都屈才了你",
+        "long": "体能离谱非人类，职业赛场都屈才了你\n身板硬天花板，心态学识社交出走\n黑牌？来啊，罚完继续",
+        "lines_cn": [
+          "体能离谱非人类，职业赛场都屈才了你",
+          "身板硬天花板，心态学识社交出走",
+          "黑牌？来啊，罚完继续"
+        ]
+      }
+    },
+    {
+      "id": "final_songchi_feichai",
+      "kind": "final",
+      "name_cn": "松弛废柴人",
+      "copy_cn": {
+        "short": "赛点逆风丝毫不慌，输赢全都无所谓",
+        "long": "赛点逆风丝毫不慌，输赢全都无所谓\n内心钝感力MAX，剑术体能拉胯地心\n双灯就双灯，无所谓咯",
+        "lines_cn": [
+          "赛点逆风丝毫不慌，输赢全都无所谓",
+          "内心钝感力MAX，剑术体能拉胯地心",
+          "双灯就双灯，无所谓咯"
+        ]
+      }
+    },
+    {
+      "id": "final_gaoqingshang_guairen",
+      "kind": "final",
+      "name_cn": "高情商怪人",
+      "copy_cn": {
+        "short": "世间得失皆浮云，练剑开心就完事",
+        "long": "世间得失皆浮云，练剑开心就完事\ne人随缘，钱财人脉学识能吃吗\n输赢看淡，不服就笑",
+        "lines_cn": [
+          "世间得失皆浮云，练剑开心就完事",
+          "e人随缘，钱财人脉学识能吃吗",
+          "输赢看淡，不服就笑"
+        ]
+      }
+    },
+    {
+      "id": "final_sheniu_tangping",
+      "kind": "final",
+      "name_cn": "社牛躺平怪",
+      "copy_cn": {
+        "short": "剑馆上下皆兄弟，裁判都混成熟人",
+        "long": "剑馆上下皆兄弟，裁判都混成熟人\n剑术体能烂渣，社交悍匪吃遍全馆\n裁判是我哥，单灯归我",
+        "lines_cn": [
+          "剑馆上下皆兄弟，裁判都混成熟人",
+          "剑术体能烂渣，社交悍匪吃遍全馆",
+          "裁判是我哥，单灯归我"
+        ]
+      }
+    },
+    {
+      "id": "final_ruanmeng_weiqu",
+      "kind": "final",
+      "name_cn": "软萌委屈包",
+      "copy_cn": {
+        "short": "全馆官方团宠，人人都愿意护着",
+        "long": "全馆官方团宠，人人都愿意护着\n一碰就碎，钱包智商碎成粉末\n呜呜他打我，队友快上",
+        "lines_cn": [
+          "全馆官方团宠，人人都愿意护着",
+          "一碰就碎，钱包智商碎成粉末",
+          "呜呜他打我，队友快上"
+        ]
+      }
+    },
+    {
+      "id": "final_nengwen_bunengwu",
+      "kind": "final",
+      "name_cn": "能文不能武",
+      "copy_cn": {
+        "short": "击剑全是几何题，建议直接当课代表",
+        "long": "击剑全是几何题，建议直接当课代表\n卷王算距走火入魔，口袋比脸干净\nFIE规则我背得比你熟",
+        "lines_cn": [
+          "击剑全是几何题，建议直接当课代表",
+          "卷王算距走火入魔，口袋比脸干净",
+          "FIE规则我背得比你熟"
+        ]
+      }
+    },
+    {
+      "id": "final_naoli_ruoji",
+      "kind": "final",
+      "name_cn": "脑力弱鸡仔",
+      "copy_cn": {
+        "short": "对手套路全看透，智商堪称战术预言家",
+        "long": "对手套路全看透，智商堪称战术预言家\n脑子碾压全场，体能心态脆皮一吹倒\n预判满分，身体没跟上",
+        "lines_cn": [
+          "对手套路全看透，智商堪称战术预言家",
+          "脑子碾压全场，体能心态脆皮一吹倒",
+          "预判满分，身体没跟上"
+        ]
+      }
+    },
+    {
+      "id": "final_gudu_wenquxing",
+      "kind": "final",
+      "name_cn": "孤独文曲星",
+      "copy_cn": {
+        "short": "剑道理论天花板，满腹知识无人能比",
+        "long": "剑道理论天花板，满腹知识无人能比\n闷头看书不理人，社恐孤魂野鬼本鬼\n论文写完了，没人看",
+        "lines_cn": [
+          "剑道理论天花板，满腹知识无人能比",
+          "闷头看书不理人，社恐孤魂野鬼本鬼",
+          "论文写完了，没人看"
+        ]
+      }
+    },
+    {
+      "id": "final_koumen_jiling",
+      "kind": "final",
+      "name_cn": "抠门小机灵",
+      "copy_cn": {
+        "short": "省钱天赋拉满，剑道隐藏理财大神",
+        "long": "省钱天赋拉满，剑道隐藏理财大神\n剑粘了八次胶带，体能用摆烂来省电\n胶带粘剑，照样亮灯",
+        "lines_cn": [
+          "省钱天赋拉满，剑道隐藏理财大神",
+          "剑粘了八次胶带，体能用摆烂来省电",
+          "胶带粘剑，照样亮灯"
+        ]
+      }
+    },
+    {
+      "id": "final_caimi_xiaoqi",
+      "kind": "final",
+      "name_cn": "财迷小气包",
+      "copy_cn": {
+        "short": "花钱堪比割肉，动一分钱都心疼半天",
+        "long": "花钱堪比割肉，动一分钱都心疼半天\n存钱天才，学习心态一碰升天\n黄牌罚款？我当场去世",
+        "lines_cn": [
+          "花钱堪比割肉，动一分钱都心疼半天",
+          "存钱天才，学习心态一碰升天",
+          "黄牌罚款？我当场去世"
+        ]
+      }
+    },
+    {
+      "id": "final_jingming_duxing",
+      "kind": "final",
+      "name_cn": "精明独行鬼",
+      "copy_cn": {
+        "short": "收支账目算得极准，存钱思路无破绽",
+        "long": "收支账目算得极准，存钱思路无破绽\n人情往来？滚远点，我只跟钱做朋友\n没钱赚的比赛？拜拜",
+        "lines_cn": [
+          "收支账目算得极准，存钱思路无破绽",
+          "人情往来？滚远点，我只跟钱做朋友",
+          "没钱赚的比赛？拜拜"
+        ]
+      }
+    },
     {
       "id": "white_paper",
       "name_cn": "白纸型",
@@ -24,7 +383,8 @@
       "copy_cn": {
         "short": "薄而不脆，空而有容。",
         "long": "\"薄而不脆，空而有容。教练看你，见'可塑性'；旁人看你，觉'平常'。然空白恰是最丰饶的底稿，无既定路径，无必须扮演之角色。此一年，你将以每一次选择为墨，亲手晕染独家底色。谨记：虚无非匮乏，乃万物之始。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "mirror",
@@ -36,7 +396,8 @@
       "copy_cn": {
         "short": "目如明镜，身似影随。",
         "long": "\"目如明镜，身似影随。教练所示，汝皆可速得其形。赞誉易得，然需警惕：'形似'乃温柔之阱。真谛在于忘摹仿之时，当汝感剑重如何贯骨传力，肌理如齿轮般自然咬合。勿令'复制'窒息'领悟'。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "flint",
@@ -48,7 +409,8 @@
       "copy_cn": {
         "short": "身藏燧火，触之即燃。",
         "long": "\"身藏燧火，触之即燃。不惧重复，热衷挑战。教练喜汝之投入，同伴或疲于汝之节奏。然火星需引，否则焚己。学会将迸溅之炽焰，转为稳定烛照，乃汝本年隐修之课。持久之温，常胜刹那之芒。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "analysis",
@@ -60,7 +422,8 @@
       "copy_cn": {
         "short": "行必求其故。",
         "long": "\"行必求其故。'弓步何以斯角度？''防守重心依何转移？'汝之问常令教练沉吟。思辨使汝免于盲从，亦可能溺于'想通'之潭，错过身体顿悟之机。剑道有知，不可言传，只可身证。觅得思与直觉间之平衡木，乃汝之功业。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "network",
@@ -72,7 +435,8 @@
       "copy_cn": {
         "short": "敏于察氛，善于融汇。",
         "long": "\"敏于察氛，善于融汇。知谁需鼓舞，悉何人低潮。汝为馆内之润滑剂，亦为情报交换中枢。人脉乃汝之舒适乡，赐诸多便利。然需铭记：剑道之上，终须独对。莫令对'气候'之依恋，遮蔽心底最真之音。独处，亦为必修之技。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "planner",
@@ -84,7 +448,8 @@
       "copy_cn": {
         "short": "始前必揆度：值否？",
         "long": "\"始前必揆度：'值否？''效几何？'此等清醒助汝避坑，起步稳健。然梦之嫩芽，时需'不偿'之浇灌方能破土。精算过甚，或杀灵光一现之勇。此年，试为'热爱'本身，做一笔看似不智之投资。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "flash_flow",
@@ -96,7 +461,8 @@
       "copy_cn": {
         "short": "厌按图索骥，总欲试反之若何？",
         "long": "\"厌按图索骥，总欲试'反之若何？''跃之可否？'汝之轨迹若心电图，有惊世峰巅，亦有探底深谷。教练对汝，爱恨交织。汝之课题：于随心挥洒前，先习标准握笔之姿。真自由，源于对规训之全然了悟。\""
-      }
+      },
+      "kind": "legacy"
     },
     {
       "id": "contrast",
@@ -107,7 +473,8 @@
       "copy_cn": {
         "short": "夺目光芒与深沉影翳并置。",
         "long": "\"汝身并置夺目光芒与深沉影翳。或学疾如风却耐心如尘，或力能扛鼎而协调未装。汝非均质之灰，乃对比强烈之墨与白。此年目标，非涂己为中庸之色，乃学令耀眼者愈辉，同时勿令浓黯者吞噬全部。与矛盾共舞，即汝之天赋。\""
-      }
+      },
+      "kind": "legacy"
     }
   ]
 }

@@ -1241,6 +1241,11 @@ export default function App() {
                   })()}
                   <p className="font-body text-sm">成长积分：{Number(screen.payload.score ?? 0)}</p>
                   <p className="font-body text-sm">评级：{String((screen.payload.grade as Record<string, string>)?.label ?? "")}</p>
+                  {typeof screen.payload.achievement_percentile_text === "string" && screen.payload.achievement_percentile_text && (
+                    <p className="mt-2 rounded-lg bg-bronze/10 px-3 py-2 font-heading text-sm text-bronze">
+                      {screen.payload.achievement_percentile_text}
+                    </p>
+                  )}
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     {ATTRS.map((attr) => (
                       <div key={attr} className="rounded bg-ink-100/70 px-2 py-1 font-body text-sm">

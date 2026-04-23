@@ -123,6 +123,7 @@ class DailyPlayQuota(Base):
 
 class ShareInvite(Base):
     __tablename__ = "share_invites"
+    __table_args__ = (UniqueConstraint("actor_type", "actor_key", name="uq_share_invite_actor"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     invite_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

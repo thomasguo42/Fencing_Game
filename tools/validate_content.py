@@ -73,19 +73,32 @@ def validate_rules(rules: dict) -> None:
 def validate_personality(personality: dict) -> None:
     require(personality.get("ruleset_version") == "v3.3.0", "personality.json ruleset_version must be v3.3.0")
     types = personality.get("types", [])
-    require(len(types) == 8, "personality.types must have 8 entries")
+    require(len(types) >= 29, "personality.types must include new initial/final and legacy entries")
 
     ids = [t.get("id") for t in types]
-    require(len(set(ids)) == 8, "personality.types ids must be unique")
+    require(len(set(ids)) == len(ids), "personality.types ids must be unique")
+    id_set = set(ids)
 
-    default_types = [t for t in types if t.get("is_default") is True]
-    require(len(default_types) == 1, "personality must have exactly one is_default=true type")
-    default_id = default_types[0].get("id")
+    initial_map = personality.get("initial_attr_map", {})
+    require(set(initial_map.keys()) == set(ATTRS), "personality.initial_attr_map must map all attrs")
+    for attr, pid in initial_map.items():
+        require(pid in id_set, f"initial_attr_map.{attr} references unknown personality id")
+
+    require(
+        personality.get("initial_attr_priority") == ["mind", "skill", "stamina", "academics", "social", "finance"],
+        "personality.initial_attr_priority must match 0423 requirement",
+    )
 
     priority = personality.get("priority_order", [])
-    require(isinstance(priority, list) and len(priority) == 8, "personality.priority_order must list 8 ids")
-    require(set(priority) == set(ids), "personality.priority_order must include exactly the same ids as types")
-    require(priority[-1] == default_id, "default personality must be last in priority_order")
+    require(isinstance(priority, list), "personality.priority_order must be a list")
+    require(set(priority) == id_set, "personality.priority_order must include exactly the same ids as types")
+
+    final_rules = personality.get("final_rules", {})
+    require(set(final_rules.keys()) == set(ATTRS), "personality.final_rules must include every high attr")
+    for high, lows in final_rules.items():
+        require(set(lows.keys()) == set(ATTRS), f"personality.final_rules.{high} must include every low attr")
+        for low, pid in lows.items():
+            require(pid in id_set, f"final_rules.{high}.{low} references unknown personality id")
 
     for t in types:
         tid = t.get("id")
@@ -133,11 +146,15 @@ def validate_weeks(weeks: dict) -> None:
             continue
 
         require(len(opts) == 6, f"{wid}: must have exactly 6 options")
+        option_types = [opt.get("option_type") for opt in opts]
+        require(option_types.count("original") == 4, f"{wid}: must have exactly 4 original options")
+        require(option_types.count("custom") == 2, f"{wid}: must have exactly 2 custom options")
         for opt in opts:
             oid = opt.get("id")
             require(isinstance(oid, str) and oid, f"{wid}: option.id required")
             require(oid not in seen_option_ids, f"duplicate option id: {oid}")
             seen_option_ids.add(oid)
+            require(opt.get("option_type") in {"original", "custom"}, f"{oid}: option_type must be original/custom")
 
             require(isinstance(opt.get("title_cn"), str) and opt.get("title_cn"), f"{oid}: title_cn required")
             require(isinstance(opt.get("desc_cn"), str) and opt.get("desc_cn"), f"{oid}: desc_cn required")
